@@ -1,0 +1,39 @@
+# Build artifacts
+contracts/target/
+target/
+
+# Scarb cache
+.snfoundry_cache/
+
+# Keys & Accounts - NEVER commit these
+*.keystore
+keystore.json
+account.json
+contracts/hackathontest
+contracts/hackathontest.keystore
+scripts/.env
+
+# Starknet accounts (contains private keys)
+.starknet_accounts/
+
+# Backup files
+contracts/src_backup/
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+
+# Node (frontend)
+node_modules/
+.next/
+dist/
+.env.local
+.env.production
+
+# Misc
+*.log

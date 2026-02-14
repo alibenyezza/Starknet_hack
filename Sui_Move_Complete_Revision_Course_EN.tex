@@ -1,0 +1,708 @@
+\documentclass[11pt]{article}
+\usepackage[a4paper, margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{tcolorbox}
+\usepackage{amsmath}
+
+\definecolor{codegray}{gray}{0.95}
+\definecolor{darkblue}{rgb}{0.0,0.0,0.5}
+
+\lstset{
+  backgroundcolor=\color{codegray},
+  basicstyle=\ttfamily\small,
+  breaklines=true,
+  frame=single,
+  keywordstyle=\color{darkblue}\bfseries,
+  commentstyle=\itshape\color{gray},
+  stringstyle=\color{black}
+}
+
+\newtcolorbox{noteBox}{
+  colback=blue!5,
+  colframe=blue!60,
+  title=\textbf{💡 Note},
+  sharp corners,
+  fonttitle=\bfseries
+}
+
+\newtcolorbox{warnBox}{
+  colback=red!5,
+  colframe=red!60,
+  title=\textbf{⚠️ Warning},
+  sharp corners,
+  fonttitle=\bfseries
+}
+
+\newtcolorbox{exampleBox}{
+  colback=green!5,
+  colframe=green!60,
+  title=\textbf{📝 Example},
+  sharp corners,
+  fonttitle=\bfseries
+}
+
+\title{\textbf{Complete Sui Move Revision Course}\\
+\large From Zero to Confident: Comprehensive Guide\\
+\large Abilities, Objects, OTW, Publisher, Capabilities, Option, Vectors, Loops, Events}
+\author{Bootcamp Notes - Concise Version}
+\date{}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+% ============================================================
+\section{Introduction: How to Use This Document}
+
+\begin{noteBox}
+This document covers all key concepts with concise explanations. Read explanations first, then study code examples.
+\end{noteBox}
+
+% ============================================================
+\section{Basics: Move and Sui}
+
+\subsection{What is a Smart Contract?}
+
+A smart contract is a deterministic, verifiable, and secure program on a blockchain.
+
+\begin{exampleBox}
+\textbf{Analogy}: Like a vending machine that always gives the same product for the same input, and anyone can verify it worked correctly.
+\end{exampleBox}
+
+\subsection{What is Move?}
+
+Move is a language designed for \textbf{assets}. Its philosophy: assets are special values that must be handled safely.
+
+\begin{noteBox}
+\textbf{Key Difference}: In Move, transferring an asset \textbf{moves} it (doesn't copy). This prevents accidental duplication.
+\end{noteBox}
+
+\subsection{What is Sui Move?}
+
+Sui Move = Move + Sui's object system (ownership, unique IDs, fast transfers).
+
+\begin{noteBox}
+In Sui, almost everything important is an \textbf{object} with a unique ID and owner.
+\end{noteBox}
+
+\subsection{Modules, Packages, and Addresses}
+
+\begin{itemize}
+  \item \textbf{Package}: Collection of modules (what you publish)
+  \item \textbf{Module}: Code file with functions (\texttt{package::module})
+  \item \textbf{Address}: Unique identifier on-chain (Package ID)
+\end{itemize}
+
+% ============================================================
+\section{Types and Structs}
+
+\subsection{Basic Types}
+
+\begin{itemize}
+  \item \texttt{u64}: Unsigned 64-bit integer (0 to very large)
+  \item \texttt{bool}: true/false
+  \item \texttt{address}: Blockchain address
+\end{itemize}
+
+\subsection{Structs}
+
+Structs are custom types you define:
+
+\begin{lstlisting}[language=Rust]
+module demo::basic {
+    struct Point {
+        x: u64,
+        y: u64
+    }
+}
+\end{lstlisting}
+
+\begin{noteBox}
+Structs are the main way to represent data in Move. In Sui, many structs become objects.
+\end{noteBox}
+
+% ============================================================
+\section{Abilities (Extremely Important)}
+
+\subsection{What are Abilities?}
+
+Abilities are \textbf{permissions on a type} that control what you can do with values.
+
+\begin{noteBox}
+\textbf{Analogy}: Like file permissions - a type can be "read-only" or "modifiable" based on its abilities.
+\end{noteBox}
+
+\subsection{The 4 Abilities}
+
+\subsubsection{1. \texttt{copy} - Permission to Duplicate}
+
+\begin{warnBox}
+\textbf{⚠️ Critical Rule}: Assets (money, NFTs, tokens) must \textbf{NEVER} have \texttt{copy}. Otherwise, you can duplicate money!
+\end{warnBox}
+
+\subsubsection{2. \texttt{drop} - Permission to Destroy}
+
+Allows destroying or ignoring a value. If a value doesn't have \texttt{drop}, you must use it somewhere.
+
+\subsubsection{3. \texttt{store} - Permission to Store}
+
+Allows storing the value inside other structs. If a struct doesn't have \texttt{store}, you can't put it in another struct.
+
+\subsubsection{4. \texttt{key} - Permission to be a Sui Object}
+
+Allows a struct to exist as a top-level object on Sui with unique ID and owner.
+
+\begin{noteBox}
+\textbf{Rule}: If a struct has \texttt{key}, it \textbf{MUST} contain \texttt{id: UID}.
+\end{noteBox}
+
+\subsection{Why Abilities Matter}
+
+\begin{lstlisting}[language=Rust]
+// Safe data can have copy
+struct Point has copy, drop, store {
+    x: u64,
+    y: u64
+}
+
+// Assets should NOT have copy
+struct Coin has store {
+    value: u64
+}
+// ❌ Cannot copy - prevents duplication
+\end{lstlisting}
+
+\subsection{Field Ability Rule}
+
+A struct can only have an ability if \textbf{all its fields} support it.
+
+% ============================================================
+\section{Sui Objects and UID}
+
+\subsection{What is an Object in Sui?}
+
+A Sui object has:
+\begin{enumerate}
+  \item Unique ID (like a serial number)
+  \item Owner (or is shared)
+  \item Data fields
+\end{enumerate}
+
+\begin{noteBox}
+\textbf{Analogy}: Like a physical book with ISBN (ID), owner, and pages (data).
+\end{noteBox}
+
+\subsection{What is UID?}
+
+\texttt{UID} = Unique Identifier. Special type provided by Sui to guarantee unique object IDs.
+
+\begin{lstlisting}[language=Rust]
+struct MyObject has key {
+    id: UID,      // Required for key
+    value: u64
+}
+\end{lstlisting}
+
+\subsection{Owned vs Shared Objects}
+
+\begin{itemize}
+  \item \textbf{Owned}: Belongs to one address
+  \begin{itemize}
+    \item Usually \textbf{fast} transactions (no global ordering needed)
+  \end{itemize}
+  
+  \item \textbf{Shared}: Accessible by everyone
+  \begin{itemize}
+    \item \textbf{Slower} transactions (requires consensus ordering)
+  \end{itemize}
+\end{itemize}
+
+\begin{warnBox}
+If you put a huge vector in a shared object with many users mutating it, performance degrades (many conflicts).
+\end{warnBox}
+
+% ============================================================
+\section{Publisher (Package Authorship Proof)}
+
+\subsection{What is Publisher?}
+
+\textbf{Publisher} is a special object created automatically when you publish a package. It proves: "I am the original author of this package."
+
+\begin{noteBox}
+\textbf{Analogy}: Like a certificate of authorship for your code.
+\end{noteBox}
+
+\subsection{Why it Exists}
+
+Ensures only original creators can perform admin actions:
+\begin{itemize}
+  \item Restricted minting
+  \item Updating rules
+  \item Package upgrades (depending on settings)
+\end{itemize}
+
+\subsection{How it's Used}
+
+\begin{lstlisting}[language=Rust]
+public fun mint_nft(
+    publisher: &Publisher,  // Must pass Publisher
+    ctx: &mut TxContext
+) {
+    // Only creator (who has Publisher) can call this
+}
+\end{lstlisting}
+
+\begin{noteBox}
+If function requires \texttt{\&Publisher} and caller doesn't have it, transaction fails automatically.
+\end{noteBox}
+
+% ============================================================
+\section{One-Time Witness (OTW)}
+
+\subsection{The Problem OTW Solves}
+
+Sometimes you must ensure initialization happens \textbf{exactly once}:
+\begin{itemize}
+  \item Creating a token type
+  \item Creating global config
+  \item Creating a unique registry
+\end{itemize}
+
+\subsection{What is an OTW?}
+
+A One-Time Witness is a struct that:
+\begin{enumerate}
+  \item Is created once (at publish time)
+  \item Is then consumed (used up)
+  \item Cannot be recreated
+\end{enumerate}
+
+\begin{noteBox}
+\textbf{Analogy}: Like a one-time concert ticket - once used, it's destroyed and can never be recreated.
+\end{noteBox}
+
+\subsection{Simple OTW Pattern}
+
+\begin{lstlisting}[language=Rust]
+module demo::otw {
+    struct INIT {}  // Empty, no abilities = perfect OTW
+    
+    public fun init(witness: INIT, ctx: &mut TxContext) {
+        // This can only run once because INIT is one-time
+        // Setup your singleton/config/registry here
+    }
+}
+\end{lstlisting}
+
+\begin{warnBox}
+If you give abilities (like \texttt{store} or \texttt{copy}) to the OTW struct, you break the "one-time" guarantee.
+\end{warnBox}
+
+% ============================================================
+\section{Capabilities (Permission as Object)}
+
+\subsection{What is a Capability?}
+
+A \textbf{capability} is an \textbf{object} that represents permission.
+
+\begin{noteBox}
+\textbf{Paradigm Shift}: Instead of "if sender is admin", Sui style: "if you own AdminCap, you are admin."
+\end{noteBox}
+
+\subsection{Why Capabilities are Powerful}
+
+\begin{itemize}
+  \item \textbf{Unforgeable}: Only your module can create them
+  \item \textbf{Transferable}: Can give admin to someone else
+  \item \textbf{Storable in multisigs/DAOs}: Enables shared governance
+\end{itemize}
+
+\subsection{Beginner Example: MintCap}
+
+\begin{lstlisting}[language=Rust]
+module demo::capabilities {
+    struct Coin has key {
+        id: UID,
+        value: u64
+    }
+    
+    // Whoever owns this has mint authority
+    struct MintCap has key {
+        id: UID
+    }
+    
+    public fun mint(
+        cap: &MintCap,  // Must pass MintCap
+        amount: u64,
+        ctx: &mut TxContext
+    ): Coin {
+        Coin { id: object::new(ctx), value: amount }
+    }
+}
+\end{lstlisting}
+
+\begin{noteBox}
+User must pass \texttt{\&MintCap}. If they don't own it, they can't supply it to the transaction.
+\end{noteBox}
+
+\subsection{Capabilities vs Publisher vs OTW}
+
+\begin{itemize}
+  \item \textbf{Publisher}: Proves package publisher (authorship/admin at package level)
+  \item \textbf{OTW}: Proves initialization can only happen once
+  \item \textbf{Capability}: Grants ongoing permission (mint, burn, admin update, etc.)
+\end{itemize}
+
+% ============================================================
+\section{Option<T> (Maybe a Value, Maybe Nothing)}
+
+\subsection{What is Option?}
+
+Move avoids \texttt{null}. Instead uses:
+\[
+Option<T> = \text{Some}(T) \ \text{or} \ \text{None}
+\]
+
+\begin{noteBox}
+\textbf{Why it matters}: Forces explicit handling - "Is there a value or not?"
+\end{noteBox}
+
+\subsection{Simple Example}
+
+\begin{lstlisting}[language=Rust]
+use std::option;
+
+let a = option::some(10);      // Some(10)
+let b = option::none<u64>();   // None
+
+if (option::is_some(&a)) {
+    let x = option::extract(a);  // Consumes Option
+};
+
+// To read without consuming
+let y = *option::borrow(&b);  // Borrows, doesn't consume
+\end{lstlisting}
+
+\begin{noteBox}
+\textbf{Key Difference}:
+\begin{itemize}
+  \item \texttt{extract}: \textbf{Consumes} Option (destroys it)
+  \item \texttt{borrow}: \textbf{Borrows} Option (doesn't destroy it)
+\end{itemize}
+\end{noteBox}
+
+\begin{warnBox}
+If you \texttt{extract} on \texttt{None}, transaction fails. Always check with \texttt{is\_some()} first.
+\end{warnBox}
+
+% ============================================================
+\section{Vectors (Dynamic Lists)}
+
+\subsection{What is vector<T>?}
+
+A vector is a dynamic list:
+\[
+vector<T> = [T, T, T, \dots]
+\]
+
+\subsection{Core Operations}
+
+\begin{itemize}
+  \item Create: \texttt{vector::empty<T>()}
+  \item Add: \texttt{vector::push\_back(\&mut v, x)}
+  \item Remove: \texttt{vector::pop\_back(\&mut v)}
+  \item Length: \texttt{vector::length(\&v)}
+  \item Read: \texttt{vector::borrow(\&v, i)}
+\end{itemize}
+
+\subsection{Beginner Example}
+
+\begin{lstlisting}[language=Rust]
+use std::vector;
+
+let v = vector::empty<u64>();
+vector::push_back(&mut v, 10);  // v = [10]
+vector::push_back(&mut v, 20);  // v = [10, 20]
+
+let len = vector::length(&v);           // 2
+let first = *vector::borrow(&v, 0);     // 10
+let last = vector::pop_back(&mut v);    // 20
+\end{lstlisting}
+
+\begin{noteBox}
+\textbf{Important}:
+\begin{itemize}
+  \item \texttt{borrow} returns a reference - use \texttt{*} to get value
+  \item \texttt{pop\_back} removes and returns last element
+  \item Indices start at 0
+\end{itemize}
+\end{noteBox}
+
+\begin{warnBox}
+If you \texttt{borrow} with an index that doesn't exist, transaction aborts. Always check length first.
+\end{warnBox}
+
+\subsection{Sui Performance Note}
+
+If a vector is in a shared object with many users mutating it, there will be conflicts (slower). Common solution: use multiple objects ("sharding") instead of one giant vector.
+
+% ============================================================
+\section{Loops (while, break, continue)}
+
+\subsection{Move Loops are Explicit}
+
+Move uses \texttt{while}. No classic \texttt{for} loop.
+
+\begin{noteBox}
+\textbf{Why while?} Forces explicit condition handling and makes code clearer.
+\end{noteBox}
+
+\subsection{Iterating a Vector}
+
+\begin{lstlisting}[language=Rust]
+let i = 0;
+let len = vector::length(&v);
+
+while (i < len) {
+    let val = *vector::borrow(&v, i);
+    // Do something with val
+    i = i + 1;  // Move to next element
+}
+\end{lstlisting}
+
+\subsection{break and continue}
+
+\begin{lstlisting}[language=Rust]
+while (i < len) {
+    let val = *vector::borrow(&v, i);
+    
+    if (val == 0) { break; };      // Exit loop
+    if (val == 1) { 
+        i = i + 1;
+        continue;                   // Skip to next iteration
+    };
+    
+    i = i + 1;
+}
+\end{lstlisting}
+
+\begin{noteBox}
+\textbf{Explanation}:
+\begin{itemize}
+  \item \texttt{break}: Exit loop immediately
+  \item \texttt{continue}: Skip to next iteration
+  \item Don't forget to increment \texttt{i} before \texttt{continue}!
+\end{itemize}
+\end{noteBox}
+
+\begin{warnBox}
+Loops cost gas. Very large loops can make transactions expensive or fail due to gas limits.
+\end{warnBox}
+
+% ============================================================
+\section{Events (Contract Communication)}
+
+\subsection{What is an Event?}
+
+An event is a \textbf{structured log} emitted during a transaction.
+
+\begin{noteBox}
+\textbf{Analogy}: Like a journal entry - records "what happened" but doesn't change persistent state.
+\end{noteBox}
+
+\subsection{Events vs Objects}
+
+\begin{itemize}
+  \item \textbf{Object}: Persistent on-chain state (can be read later)
+  \item \textbf{Event}: Log output (useful off-chain, not used as state)
+\end{itemize}
+
+\subsection{Defining an Event}
+
+\begin{lstlisting}[language=Rust]
+struct MintEvent has copy, drop {
+    owner: address,
+    amount: u64
+}
+\end{lstlisting}
+
+\begin{noteBox}
+Events usually have \texttt{copy, drop} because they're not assets - copying is safe.
+\end{noteBox}
+
+\subsection{Emitting an Event}
+
+\begin{lstlisting}[language=Rust]
+use sui::event;
+
+event::emit(MintEvent {
+    owner: tx_context::sender(ctx),
+    amount: 100
+});
+\end{lstlisting}
+
+\begin{noteBox}
+\textbf{How it works}:
+\begin{itemize}
+  \item \texttt{event::emit()} records event in transaction
+  \item Frontends can listen to these events
+  \item Excellent for real-time UI updates
+\end{itemize}
+\end{noteBox}
+
+\subsection{When to Use Each}
+
+\begin{itemize}
+  \item \textbf{Use Object} if: Need to read/modify state later, information must persist
+  \item \textbf{Use Event} if: Just want to notify something happened, frontend reactions, history log
+\end{itemize}
+
+% ============================================================
+\section{Putting It All Together (Complete Pattern)}
+
+\subsection{Goal}
+
+Create a system with:
+\begin{enumerate}
+  \item Shared \textbf{Config} object created once (OTW)
+  \item \textbf{AdminCap} capability to update it
+  \item Events when updates happen
+  \item Optional admin address (Option)
+\end{enumerate}
+
+\subsection{Complete Example}
+
+\begin{lstlisting}[language=Rust]
+module demo::app {
+    use sui::object::{UID};
+    use sui::tx_context::TxContext;
+    use sui::transfer;
+    use sui::event;
+    use std::option::{Self, Option};
+
+    struct INIT {}  // OTW
+
+    struct AdminCap has key { id: UID }
+
+    struct Config has key {
+        id: UID,
+        admin: Option<address>,  // Optional admin
+        threshold: u64
+    }
+
+    struct ConfigUpdated has copy, drop {
+        new_threshold: u64
+    }
+
+    // Initialize once
+    public fun init(w: INIT, ctx: &mut TxContext) {
+        let cap = AdminCap { id: object::new(ctx) };
+        let cfg = Config {
+            id: object::new(ctx),
+            admin: option::some(tx_context::sender(ctx)),
+            threshold: 0
+        };
+
+        transfer::transfer(cap, tx_context::sender(ctx));
+        transfer::share_object(cfg);
+    }
+
+    // Only admin can update
+    public fun set_threshold(
+        cap: &AdminCap,
+        cfg: &mut Config,
+        v: u64
+    ) {
+        cfg.threshold = v;
+        event::emit(ConfigUpdated { new_threshold: v });
+    }
+}
+\end{lstlisting}
+
+\begin{noteBox}
+\textbf{Explanation}:
+\begin{enumerate}
+  \item \textbf{OTW (INIT)}: Guarantees \texttt{init()} runs only once
+  \item \textbf{AdminCap}: Capability object for admin permission
+  \item \textbf{Config}: Shared object with global configuration
+  \item \textbf{Option<address>}: Optional admin (Some or None)
+  \item \textbf{ConfigUpdated}: Event emitted on config change
+  \item \texttt{init()}: Creates everything once, gives AdminCap to creator, shares Config
+  \item \texttt{set\_threshold()}: Requires AdminCap, updates Config, emits event
+\end{enumerate}
+\end{noteBox}
+
+% ============================================================
+\section{Common Beginner Mistakes}
+
+\begin{enumerate}
+  \item \textbf{Giving assets \texttt{copy} ability} (DANGEROUS!)
+  \begin{itemize}
+    \item Solution: Never give \texttt{copy} to assets
+  \end{itemize}
+  
+  \item \textbf{Forgetting \texttt{id: UID} in \texttt{has key} structs}
+  \begin{itemize}
+    \item Solution: Always include \texttt{id: UID} in Sui objects
+  \end{itemize}
+  
+  \item \textbf{Treating events as persistent storage}
+  \begin{itemize}
+    \item Solution: Use objects for persistent state
+  \end{itemize}
+  
+  \item \textbf{Writing huge loops on shared vectors}
+  \begin{itemize}
+    \item Solution: Use multiple objects (sharding) or limit size
+  \end{itemize}
+  
+  \item \textbf{Not using capabilities for admin actions}
+  \begin{itemize}
+    \item Solution: Use capabilities for permissions
+  \end{itemize}
+  
+  \item \textbf{Confusing OTW (one-time init) with Publisher (authorship proof)}
+  \begin{itemize}
+    \item Solution: Understand difference and use each correctly
+  \end{itemize}
+\end{enumerate}
+
+% ============================================================
+\section{Final Mental Model}
+
+\begin{center}
+\Large\textbf{Sui Move = Objects + Ownership + Abilities + Capabilities}
+\end{center}
+
+\subsection{Key Concepts}
+
+\begin{enumerate}
+  \item \textbf{Abilities}: Prevent unsafe behavior (copy money, drop assets)
+  \item \textbf{Objects}: Persistent state (with UID)
+  \item \textbf{OTW}: Ensures one-time initialization
+  \item \textbf{Publisher}: Proves package authorship and protects admin actions
+  \item \textbf{Capabilities}: "Permission objects"
+  \item \textbf{Option}: Safe "maybe" values (no null)
+  \item \textbf{Vector}: Stores lists, loops iterate them
+  \item \textbf{Events}: Broadcast what happened to off-chain world
+\end{enumerate}
+
+\subsection{Sui Move Philosophy}
+
+\begin{noteBox}
+\textbf{Fundamental Principles}:
+\begin{itemize}
+  \item \textbf{Security by Design}: Language forces you to be explicit about assets
+  \item \textbf{Objects as Permissions}: Owning an object = having permission
+  \item \textbf{Explicit over Implicit}: Must say exactly what you want to do
+  \item \textbf{Composition}: Build complex systems from simple building blocks
+\end{itemize}
+\end{noteBox}
+
+\end{document}
