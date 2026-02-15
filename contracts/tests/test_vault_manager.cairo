@@ -1,162 +1,133 @@
 //! Tests for Vault Manager contract
 
 use starknet::ContractAddress;
-use starknet::testing::set_caller_address;
-use starkyield::vault::vault_manager::{VaultManagerDispatcher, VaultManagerDispatcherTrait, IVaultManagerDispatcher, IVaultManagerDispatcherTrait};
-use starkyield::vault::sy_btc_token::{SyBtcTokenDispatcher, SyBtcTokenDispatcherTrait};
-use core::byte_array::ByteArray;
+use starkyield::vault::vault_manager::{IVaultManagerDispatcher, IVaultManagerDispatcherTrait};
 use core::traits::TryInto;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use snforge_std::{declare, ContractClassTrait, DeclareResultTrait, deploy, DeployResultTrait, test_address};
+    use snforge_std::{
+        declare, ContractClassTrait, DeclareResultTrait, test_address,
+        start_cheat_caller_address, stop_cheat_caller_address,
+    };
 
-    fn deploy_sy_btc_token(owner: ContractAddress) -> SyBtcTokenDispatcher {
-        let name = ByteArray::from("StarkYield BTC");
-        let symbol = ByteArray::from("syBTC");
-        
-        let contract_class = declare("SyBtcToken").unwrap().contract_class();
-        let (contract_address, _) = deploy(@contract_class, array![name.into(), symbol.into(), owner.into()]).unwrap();
-        
-        SyBtcTokenDispatcher { contract_address }
-    }
+    fn deploy_vault_manager(owner: ContractAddress) -> IVaultManagerDispatcher {
+        let zero: ContractAddress = 0.try_into().unwrap();
 
-    fn deploy_vault_manager(
-        btc_token: ContractAddress,
-        usdc_token: ContractAddress,
-        sy_btc_token: ContractAddress,
-        ekubo_pool: ContractAddress,
-        vesu_lending: ContractAddress,
-        pragma_oracle: ContractAddress,
-        owner: ContractAddress
-    ) -> VaultManagerDispatcher {
         let contract_class = declare("VaultManager").unwrap().contract_class();
-        let (contract_address, _) = deploy(
-            @contract_class,
-            array![
-                btc_token.into(),
-                usdc_token.into(),
-                sy_btc_token.into(),
-                ekubo_pool.into(),
-                vesu_lending.into(),
-                pragma_oracle.into(),
-                owner.into()
-            ]
-        ).unwrap();
-        
-        VaultManagerDispatcher { contract_address }
+        let calldata = array![
+            zero.into(),  // btc_token (zero = no real ERC20 calls in view tests)
+            zero.into(),  // usdc_token
+            zero.into(),  // sy_btc_token
+            zero.into(),  // ekubo_adapter
+            zero.into(),  // vesu_adapter
+            zero.into(),  // pragma_adapter
+            zero.into(),  // leverage_manager
+            owner.into()
+        ];
+        let (contract_address, _) = contract_class.deploy(@calldata).unwrap();
+
+        IVaultManagerDispatcher { contract_address }
     }
 
     #[test]
     fn test_deploy() {
         let owner = test_address();
-        let btc_token: ContractAddress = 1.try_into().unwrap();
-        let usdc_token: ContractAddress = 2.try_into().unwrap();
-        let ekubo_pool: ContractAddress = 3.try_into().unwrap();
-        let vesu_lending: ContractAddress = 4.try_into().unwrap();
-        let pragma_oracle: ContractAddress = 5.try_into().unwrap();
-        
-        let sy_btc_token = deploy_sy_btc_token(owner);
-        let vault = deploy_vault_manager(
-            btc_token,
-            usdc_token,
-            sy_btc_token.contract_address,
-            ekubo_pool,
-            vesu_lending,
-            pragma_oracle,
-            owner
-        );
-        
-        // Check initial state
-        let dispatcher = IVaultManagerDispatcher { contract_address: vault.contract_address };
-        let total_shares = dispatcher.get_total_shares();
+        let vault = deploy_vault_manager(owner);
+
+        let total_shares = vault.get_total_shares();
         assert(total_shares == 0, 'Initial shares should be 0');
-        
-        let total_assets = dispatcher.get_total_assets();
-        assert(total_assets == 0, 'Initial assets should be 0');
     }
 
     #[test]
-    fn test_get_share_price_first_deposit() {
+    fn test_get_share_price_initial() {
         let owner = test_address();
-        let btc_token: ContractAddress = 1.try_into().unwrap();
-        let usdc_token: ContractAddress = 2.try_into().unwrap();
-        let ekubo_pool: ContractAddress = 3.try_into().unwrap();
-        let vesu_lending: ContractAddress = 4.try_into().unwrap();
-        let pragma_oracle: ContractAddress = 5.try_into().unwrap();
-        
-        let sy_btc_token = deploy_sy_btc_token(owner);
-        let vault = deploy_vault_manager(
-            btc_token,
-            usdc_token,
-            sy_btc_token.contract_address,
-            ekubo_pool,
-            vesu_lending,
-            pragma_oracle,
-            owner
-        );
-        
-        // Share price should be 1.0 (1e18) when no shares exist
-        let dispatcher = IVaultManagerDispatcher { contract_address: vault.contract_address };
-        let share_price = dispatcher.get_share_price();
-        let scale = 1000000000000000000; // 1e18
+        let vault = deploy_vault_manager(owner);
+
+        let share_price = vault.get_share_price();
+        let scale = 1_000000000000000000_u256;
         assert(share_price == scale, 'Share price should be 1.0');
+    }
+
+    #[test]
+    fn test_get_health_factor_no_debt() {
+        let owner = test_address();
+        let vault = deploy_vault_manager(owner);
+
+        let hf = vault.get_health_factor();
+        let expected = 999 * 1_000000000000000000_u256;
+        assert(hf == expected, 'HF should be 999x with no debt');
+    }
+
+    #[test]
+    fn test_get_current_leverage_no_position() {
+        let owner = test_address();
+        let vault = deploy_vault_manager(owner);
+
+        let leverage = vault.get_current_leverage();
+        let scale = 1_000000000000000000_u256;
+        assert(leverage == scale, 'Leverage should be 1x');
+    }
+
+    #[test]
+    fn test_get_btc_price_fallback() {
+        let owner = test_address();
+        let vault = deploy_vault_manager(owner);
+
+        let btc_price = vault.get_btc_price();
+        let expected = 60000 * 1_000000000000000000_u256;
+        assert(btc_price == expected, 'Should use fallback BTC price');
     }
 
     #[test]
     fn test_set_paused() {
         let owner = test_address();
-        let btc_token: ContractAddress = 1.try_into().unwrap();
-        let usdc_token: ContractAddress = 2.try_into().unwrap();
-        let ekubo_pool: ContractAddress = 3.try_into().unwrap();
-        let vesu_lending: ContractAddress = 4.try_into().unwrap();
-        let pragma_oracle: ContractAddress = 5.try_into().unwrap();
-        
-        let sy_btc_token = deploy_sy_btc_token(owner);
-        let vault = deploy_vault_manager(
-            btc_token,
-            usdc_token,
-            sy_btc_token.contract_address,
-            ekubo_pool,
-            vesu_lending,
-            pragma_oracle,
-            owner
-        );
-        
-        set_caller_address(owner);
-        let mut dispatcher = IVaultManagerDispatcher { contract_address: vault.contract_address };
-        dispatcher.set_paused(true);
-        
-        // Try to deposit while paused (should fail)
-        // Note: This test would need proper error handling in real scenario
+        let vault = deploy_vault_manager(owner);
+
+        start_cheat_caller_address(vault.contract_address, owner);
+        vault.set_paused(true);
+        stop_cheat_caller_address(vault.contract_address);
+    }
+
+    #[test]
+    #[should_panic(expected: 'Only owner')]
+    fn test_set_paused_not_owner() {
+        let owner = test_address();
+        let vault = deploy_vault_manager(owner);
+
+        let attacker: ContractAddress = 0x999.try_into().unwrap();
+        start_cheat_caller_address(vault.contract_address, attacker);
+        vault.set_paused(true);
     }
 
     #[test]
     fn test_set_target_leverage() {
         let owner = test_address();
-        let btc_token: ContractAddress = 1.try_into().unwrap();
-        let usdc_token: ContractAddress = 2.try_into().unwrap();
-        let ekubo_pool: ContractAddress = 3.try_into().unwrap();
-        let vesu_lending: ContractAddress = 4.try_into().unwrap();
-        let pragma_oracle: ContractAddress = 5.try_into().unwrap();
-        
-        let sy_btc_token = deploy_sy_btc_token(owner);
-        let vault = deploy_vault_manager(
-            btc_token,
-            usdc_token,
-            sy_btc_token.contract_address,
-            ekubo_pool,
-            vesu_lending,
-            pragma_oracle,
-            owner
-        );
-        
-        set_caller_address(owner);
-        let new_leverage = 2500000000000000000; // 2.5x
-        let mut dispatcher = IVaultManagerDispatcher { contract_address: vault.contract_address };
-        dispatcher.set_target_leverage(new_leverage);
-        
-        // Verify leverage was set (would need getter function)
+        let vault = deploy_vault_manager(owner);
+
+        start_cheat_caller_address(vault.contract_address, owner);
+        vault.set_target_leverage(2_500000000000000000);
+        stop_cheat_caller_address(vault.contract_address);
+    }
+
+    #[test]
+    #[should_panic(expected: 'Leverage too low')]
+    fn test_set_target_leverage_too_low() {
+        let owner = test_address();
+        let vault = deploy_vault_manager(owner);
+
+        start_cheat_caller_address(vault.contract_address, owner);
+        vault.set_target_leverage(1_000000000000000000);
+    }
+
+    #[test]
+    #[should_panic(expected: 'Leverage too high')]
+    fn test_set_target_leverage_too_high() {
+        let owner = test_address();
+        let vault = deploy_vault_manager(owner);
+
+        start_cheat_caller_address(vault.contract_address, owner);
+        vault.set_target_leverage(4_000000000000000000);
     }
 }

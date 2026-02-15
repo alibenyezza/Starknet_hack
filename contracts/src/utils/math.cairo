@@ -22,35 +22,52 @@ pub mod Math {
         if x == 0 {
             return 0;
         }
-        if x < Constants::SCALE {
-            return 0;
-        }
 
-        // Start with an initial guess
-        let mut guess = x / 2 + 1;
-        let mut prev_guess = 0;
-
-        // Iterate until convergence (max 20 iterations for safety)
-        let mut i: u8 = 0;
+        // Use x itself as initial guess, but cap it for efficiency
+        // For Babylonian method, a smaller starting guess converges faster
+        let mut guess = x;
+        // Reduce initial guess by repeated halving to be closer to sqrt(x)
+        let mut temp = x;
+        let mut shift: u32 = 0;
         loop {
-            if i == 20 {
+            if temp <= 1 {
                 break;
             }
-            prev_guess = guess;
-            guess = (guess + x / guess) / 2;
-            
-            // Check if we've converged (difference < 1)
-            if guess >= prev_guess {
-                if guess - prev_guess <= 1 {
-                    break;
-                }
+            temp = temp / 2;
+            shift += 1;
+        };
+        // Initial guess ≈ 2^(shift/2)
+        guess = 1;
+        let half_shift = shift / 2;
+        let mut j: u32 = 0;
+        loop {
+            if j >= half_shift {
+                break;
+            }
+            guess = guess * 2;
+            j += 1;
+        };
+
+        // Babylonian method — converges quadratically from a good initial guess
+        let mut i: u8 = 0;
+        loop {
+            if i == 64 {
+                break;
+            }
+            let new_guess = (guess + x / guess) / 2;
+
+            // Check convergence
+            let diff = if new_guess >= guess {
+                new_guess - guess
             } else {
-                if prev_guess - guess <= 1 {
-                    break;
-                }
+                guess - new_guess
+            };
+            guess = new_guess;
+            if diff <= 1 {
+                break;
             }
             i += 1;
-        }
+        };
 
         guess
     }

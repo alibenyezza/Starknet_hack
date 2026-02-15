@@ -12,6 +12,10 @@ use starkyield::vault::sy_btc_token::ISyBtcTokenDispatcher;
 use starkyield::vault::sy_btc_token::ISyBtcTokenDispatcherTrait;
 use starkyield::integrations::ierc20::IERC20Dispatcher;
 use starkyield::integrations::ierc20::IERC20DispatcherTrait;
+use starkyield::integrations::pragma_oracle::IPragmaAdapterDispatcher;
+use starkyield::integrations::pragma_oracle::IPragmaAdapterDispatcherTrait;
+use starkyield::strategy::leverage_manager::ILeverageManagerDispatcher;
+use starkyield::strategy::leverage_manager::ILeverageManagerDispatcherTrait;
 
 #[starknet::interface]
 pub trait IVaultManager<TContractState> {
@@ -19,18 +23,20 @@ pub trait IVaultManager<TContractState> {
     fn deposit(ref self: TContractState, amount: u256) -> u256;
     fn withdraw(ref self: TContractState, shares: u256) -> u256;
     fn rebalance(ref self: TContractState);
-    
+
     // Admin functions
     fn emergency_withdraw(ref self: TContractState);
     fn set_paused(ref self: TContractState, paused: bool);
     fn set_target_leverage(ref self: TContractState, leverage: u256);
-    
+
     // View functions
     fn get_total_assets(self: @TContractState) -> u256;
     fn get_share_price(self: @TContractState) -> u256;
     fn get_health_factor(self: @TContractState) -> u256;
     fn get_user_shares(self: @TContractState, user: ContractAddress) -> u256;
     fn get_total_shares(self: @TContractState) -> u256;
+    fn get_btc_price(self: @TContractState) -> u256;
+    fn get_current_leverage(self: @TContractState) -> u256;
 }
 
 #[starknet::contract]
@@ -39,6 +45,8 @@ pub mod VaultManager {
         IVaultManager, ContractAddress, get_caller_address, get_contract_address, Constants, Math,
         ISyBtcTokenDispatcher, ISyBtcTokenDispatcherTrait,
         IERC20Dispatcher, IERC20DispatcherTrait,
+        IPragmaAdapterDispatcher, IPragmaAdapterDispatcherTrait,
+        ILeverageManagerDispatcher, ILeverageManagerDispatcherTrait,
     };
     use starknet::storage::Map;
 
@@ -48,27 +56,28 @@ pub mod VaultManager {
         btc_token: ContractAddress,
         usdc_token: ContractAddress,
         sy_btc_token: ContractAddress,
-        
+
         // Tracking
         total_btc_deposited: u256,
         total_shares: u256,
         user_shares: Map<ContractAddress, u256>,
-        
+
         // Strategy allocation
         btc_in_lp: u256,
         btc_leveraged: u256,
         usdc_borrowed: u256,
-        
+
         // Risk parameters
-        target_leverage: u256,     // 2x (scaled 1e18)
-        max_leverage: u256,        // 3x max
-        min_health_factor: u256,   // 1.2 min
-        
+        target_leverage: u256,
+        max_leverage: u256,
+        min_health_factor: u256,
+
         // External contracts
-        ekubo_pool: ContractAddress,
-        vesu_lending: ContractAddress,
-        pragma_oracle: ContractAddress,
-        
+        ekubo_adapter: ContractAddress,
+        vesu_adapter: ContractAddress,
+        pragma_adapter: ContractAddress,
+        leverage_manager: ContractAddress,
+
         // Admin
         owner: ContractAddress,
         is_paused: bool,
@@ -81,6 +90,7 @@ pub mod VaultManager {
         Withdraw: Withdraw,
         Rebalance: Rebalance,
         Paused: Paused,
+        EmergencyWithdraw: EmergencyWithdraw,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -110,26 +120,33 @@ pub mod VaultManager {
         paused: bool,
     }
 
+    #[derive(Drop, starknet::Event)]
+    struct EmergencyWithdraw {
+        total_btc_recovered: u256,
+    }
+
     #[constructor]
     fn constructor(
         ref self: ContractState,
         btc_token: ContractAddress,
         usdc_token: ContractAddress,
         sy_btc_token: ContractAddress,
-        ekubo_pool: ContractAddress,
-        vesu_lending: ContractAddress,
-        pragma_oracle: ContractAddress,
+        ekubo_adapter: ContractAddress,
+        vesu_adapter: ContractAddress,
+        pragma_adapter: ContractAddress,
+        leverage_manager: ContractAddress,
         owner: ContractAddress,
     ) {
         self.btc_token.write(btc_token);
         self.usdc_token.write(usdc_token);
         self.sy_btc_token.write(sy_btc_token);
-        self.ekubo_pool.write(ekubo_pool);
-        self.vesu_lending.write(vesu_lending);
-        self.pragma_oracle.write(pragma_oracle);
+        self.ekubo_adapter.write(ekubo_adapter);
+        self.vesu_adapter.write(vesu_adapter);
+        self.pragma_adapter.write(pragma_adapter);
+        self.leverage_manager.write(leverage_manager);
         self.owner.write(owner);
         self.is_paused.write(false);
-        
+
         // Set default risk parameters
         self.target_leverage.write(Constants::TARGET_LEVERAGE);
         self.max_leverage.write(Constants::MAX_LEVERAGE);
@@ -138,85 +155,138 @@ pub mod VaultManager {
 
     #[abi(embed_v0)]
     impl VaultManagerImpl of IVaultManager<ContractState> {
-        /// Dépose des BTC et reçoit des syBTC
-        /// 
-        /// # Arguments
-        /// * `amount` - Montant de BTC à déposer
-        /// 
-        /// # Returns
-        /// Nombre de shares (syBTC) reçues
+        /// Deposit BTC and receive syBTC shares
         fn deposit(ref self: ContractState, amount: u256) -> u256 {
             assert(!self.is_paused.read(), 'Vault is paused');
             assert(amount > 0, 'Amount must be > 0');
-            
+
             let caller = get_caller_address();
             let shares = self._calculate_shares_for_deposit(amount);
-            
-            // Transfer BTC from user
+
+            // Transfer BTC from user to vault
             self._transfer_btc_from_user(caller, amount);
-            
+
             // Mint syBTC shares to user
             self._mint_shares(caller, shares);
-            
-            // Allocate to strategy
+
+            // Allocate to strategy via LeverageManager
             self._allocate_to_strategy(amount);
-            
+
             // Update tracking
             self.total_btc_deposited.write(self.total_btc_deposited.read() + amount);
-            
-            // Emit event
+
             self.emit(Deposit { user: caller, amount, shares });
-            
+
             shares
         }
 
-        /// Retire des BTC en brûlant des syBTC
-        /// 
-        /// # Arguments
-        /// * `shares` - Nombre de shares (syBTC) à brûler
-        /// 
-        /// # Returns
-        /// Montant de BTC retiré
+        /// Withdraw BTC by burning syBTC shares
         fn withdraw(ref self: ContractState, shares: u256) -> u256 {
             assert(!self.is_paused.read(), 'Vault is paused');
             assert(shares > 0, 'Shares must be > 0');
-            
+
             let caller = get_caller_address();
             let user_shares = self.user_shares.read(caller);
             assert(shares <= user_shares, 'Insufficient shares');
-            
-            // Calculate BTC amount to withdraw
+
+            // Calculate BTC amount
             let btc_amount = self._calculate_btc_for_shares(shares);
-            
-            // Withdraw from strategy
+
+            // Withdraw from strategy via LeverageManager
             self._withdraw_from_strategy(btc_amount);
-            
+
             // Burn shares
             self._burn_shares(caller, shares);
-            
+
             // Transfer BTC to user
             self._transfer_btc_to_user(caller, btc_amount);
-            
+
             // Update tracking
             self.total_btc_deposited.write(self.total_btc_deposited.read() - btc_amount);
-            
-            // Emit event
+
             self.emit(Withdraw { user: caller, shares, amount: btc_amount });
-            
+
             btc_amount
         }
 
-        /// Rééquilibre la position (callable par tous)
+        /// Rebalance the position to match target leverage
+        /// Callable by anyone — permissionless keeper function
         fn rebalance(ref self: ContractState) {
-            // This will be implemented when we add leverage_manager
-            // For now, just a placeholder
+            assert(!self.is_paused.read(), 'Vault is paused');
+
+            let lm = ILeverageManagerDispatcher {
+                contract_address: self.leverage_manager.read(),
+            };
+
+            let current_leverage = lm.get_current_leverage();
+            let target = self.target_leverage.read();
+
+            // Check if rebalance is needed (deviation > REBALANCE_THRESHOLD)
+            let deviation = Math::abs_diff(current_leverage, target);
+            assert(deviation > Constants::REBALANCE_THRESHOLD, 'No rebalance needed');
+
+            let old_leverage = current_leverage;
+
+            if current_leverage > target {
+                // Leverage too high — reduce by repaying USDC debt
+                let excess = current_leverage - target;
+                let usdc_borrowed = self.usdc_borrowed.read();
+                let repay_ratio = Math::div_fixed(excess, current_leverage);
+                let repay_amount = Math::mul_fixed(usdc_borrowed, repay_ratio);
+                if repay_amount > 0 {
+                    lm.reduce_leverage(repay_amount);
+                }
+            } else {
+                // Leverage too low — increase by borrowing more
+                let deficit = target - current_leverage;
+                let btc_price = self._get_btc_price();
+                let total_btc = self.btc_in_lp.read() + self.btc_leveraged.read();
+                let additional_borrow_btc = Math::mul_fixed(
+                    Math::div_fixed(deficit, target), total_btc
+                );
+                let additional_borrow_usdc = Math::mul_fixed(additional_borrow_btc, btc_price);
+                if additional_borrow_usdc > 0 {
+                    lm.increase_leverage(additional_borrow_usdc);
+                }
+            }
+
+            // Sync state from leverage manager
+            let (btc_lp, btc_lev, usdc_debt) = lm.get_position_info();
+            self.btc_in_lp.write(btc_lp);
+            self.btc_leveraged.write(btc_lev);
+            self.usdc_borrowed.write(usdc_debt);
+
+            let new_leverage = lm.get_current_leverage();
+
+            // Safety: health factor must remain acceptable
+            assert(
+                self.get_health_factor() >= self.min_health_factor.read(),
+                'HF too low after rebalance'
+            );
+
+            self.emit(Rebalance { old_leverage, new_leverage });
         }
 
-        /// Retrait d'urgence (admin only)
+        /// Emergency withdrawal — close all positions (admin only)
         fn emergency_withdraw(ref self: ContractState) {
             assert(get_caller_address() == self.owner.read(), 'Only owner');
+
             self.is_paused.write(true);
-            // Close all positions - will be implemented later
+            self.emit(Paused { paused: true });
+
+            // Close all positions via leverage manager
+            let lm = ILeverageManagerDispatcher {
+                contract_address: self.leverage_manager.read(),
+            };
+            lm.close_all_positions();
+
+            // Reset strategy tracking
+            self.btc_in_lp.write(0);
+            self.btc_leveraged.write(0);
+            self.usdc_borrowed.write(0);
+
+            let recovered = self._get_btc_balance();
+            self.emit(EmergencyWithdraw { total_btc_recovered: recovered });
         }
 
         /// Pause/unpause the vault (admin only)
@@ -238,29 +308,33 @@ pub mod VaultManager {
         // VIEW FUNCTIONS
         // ═══════════════════════════════════════════════════════
 
+        /// Total assets = vault BTC balance + LP BTC + leveraged BTC - debt in BTC
         fn get_total_assets(self: @ContractState) -> u256 {
-            self._get_btc_balance() 
-            + self.btc_in_lp.read() 
-            + self.btc_leveraged.read() 
-            - self._convert_usdc_to_btc(self.usdc_borrowed.read())
+            let vault_balance = self._get_btc_balance();
+            let lp = self.btc_in_lp.read();
+            let leveraged = self.btc_leveraged.read();
+            let debt_btc = self._convert_usdc_to_btc(self.usdc_borrowed.read());
+
+            vault_balance + lp + leveraged - debt_btc
         }
 
+        /// Price of 1 share in BTC terms (scaled 1e18)
         fn get_share_price(self: @ContractState) -> u256 {
             let total = self.total_shares.read();
             if total == 0 {
-                return Constants::SCALE; // 1e18 = 1.0
+                return Constants::SCALE;
             }
             Math::div_fixed(self.get_total_assets(), total)
         }
 
+        /// Health factor = collateral_value / (debt * liquidation_threshold)
         fn get_health_factor(self: @ContractState) -> u256 {
             let collateral = self._get_collateral_value();
             let debt = self.usdc_borrowed.read();
             if debt == 0 {
-                return 999 * Constants::SCALE; // Very high HF when no debt
+                return 999 * Constants::SCALE;
             }
-            let liquidation_threshold = Constants::LIQUIDATION_THRESHOLD;
-            let debt_with_threshold = Math::mul_fixed(debt, liquidation_threshold);
+            let debt_with_threshold = Math::mul_fixed(debt, Constants::LIQUIDATION_THRESHOLD);
             Math::div_fixed(collateral, debt_with_threshold)
         }
 
@@ -271,6 +345,33 @@ pub mod VaultManager {
         fn get_total_shares(self: @ContractState) -> u256 {
             self.total_shares.read()
         }
+
+        /// Get current BTC/USD price from oracle
+        fn get_btc_price(self: @ContractState) -> u256 {
+            self._get_btc_price()
+        }
+
+        /// Get current leverage ratio
+        fn get_current_leverage(self: @ContractState) -> u256 {
+            let total_exposure = self.btc_in_lp.read() + self.btc_leveraged.read();
+            if total_exposure == 0 {
+                return Constants::SCALE;
+            }
+
+            let debt = self.usdc_borrowed.read();
+            if debt == 0 {
+                return Constants::SCALE;
+            }
+
+            let debt_in_btc = self._convert_usdc_to_btc(debt);
+            let equity = if total_exposure > debt_in_btc {
+                total_exposure - debt_in_btc
+            } else {
+                1
+            };
+
+            Math::div_fixed(total_exposure, equity)
+        }
     }
 
     // ═══════════════════════════════════════════════════════
@@ -280,30 +381,23 @@ pub mod VaultManager {
     #[generate_trait]
     impl InternalImpl of InternalTrait {
         /// Calculate shares to mint for a deposit
-        fn _calculate_shares_for_deposit(
-            self: @ContractState, amount: u256
-        ) -> u256 {
+        fn _calculate_shares_for_deposit(self: @ContractState, amount: u256) -> u256 {
             let total_shares = self.total_shares.read();
             let total_assets = self.get_total_assets();
-            
+
             if total_shares == 0 {
-                // First deposit: 1 share = 1 BTC
                 return amount;
             }
-            
-            // shares = (amount * total_shares) / total_assets
+
             Math::mul_fixed(amount, total_shares) / total_assets
         }
 
         /// Calculate BTC amount for shares
-        fn _calculate_btc_for_shares(
-            self: @ContractState, shares: u256
-        ) -> u256 {
+        fn _calculate_btc_for_shares(self: @ContractState, shares: u256) -> u256 {
             let total_shares = self.total_shares.read();
             assert(total_shares > 0, 'No shares exist');
-            
+
             let total_assets = self.get_total_assets();
-            // btc = (shares * total_assets) / total_shares
             Math::mul_fixed(shares, total_assets) / total_shares
         }
 
@@ -330,16 +424,13 @@ pub mod VaultManager {
         fn _mint_shares(
             ref self: ContractState, user: ContractAddress, shares: u256
         ) {
-            let sy_btc = ISyBtcTokenDispatcher { 
-                contract_address: self.sy_btc_token.read() 
+            let sy_btc = ISyBtcTokenDispatcher {
+                contract_address: self.sy_btc_token.read()
             };
             sy_btc.mint(user, shares);
-            
-            // Update user shares
+
             let current = self.user_shares.read(user);
             self.user_shares.write(user, current + shares);
-            
-            // Update total shares
             self.total_shares.write(self.total_shares.read() + shares);
         }
 
@@ -347,51 +438,72 @@ pub mod VaultManager {
         fn _burn_shares(
             ref self: ContractState, user: ContractAddress, shares: u256
         ) {
-            let sy_btc = ISyBtcTokenDispatcher { 
-                contract_address: self.sy_btc_token.read() 
+            let sy_btc = ISyBtcTokenDispatcher {
+                contract_address: self.sy_btc_token.read()
             };
             sy_btc.burn(user, shares);
-            
-            // Update user shares
+
             let current = self.user_shares.read(user);
             assert(current >= shares, 'Insufficient shares');
             self.user_shares.write(user, current - shares);
-            
-            // Update total shares
             self.total_shares.write(self.total_shares.read() - shares);
         }
 
-        /// Allocate BTC to strategy (50% LP, 50% leverage)
-        fn _allocate_to_strategy(
-            ref self: ContractState, amount: u256
-        ) {
-            // For now, just track - will be implemented with integrations
-            // 50% to LP
-            let lp_amount = amount / 2;
-            self.btc_in_lp.write(self.btc_in_lp.read() + lp_amount);
-            
-            // 50% to leverage (will be implemented later)
-            let leverage_amount = amount - lp_amount;
-            self.btc_leveraged.write(self.btc_leveraged.read() + leverage_amount);
-        }
+        /// Allocate BTC to strategy via LeverageManager
+        fn _allocate_to_strategy(ref self: ContractState, amount: u256) {
+            let lm_address = self.leverage_manager.read();
+            let zero_address: ContractAddress = 0.try_into().unwrap();
 
-        /// Withdraw BTC from strategy
-        fn _withdraw_from_strategy(
-            ref self: ContractState, amount: u256
-        ) {
-            // For now, just track - will be implemented with integrations
-            // Proportional withdrawal from LP and leverage
-            let total_in_strategy = self.btc_in_lp.read() + self.btc_leveraged.read();
-            if total_in_strategy == 0 {
+            if lm_address == zero_address {
+                // Fallback: tracking only (for testing without LeverageManager)
+                let lp_amount = amount / 2;
+                self.btc_in_lp.write(self.btc_in_lp.read() + lp_amount);
+                let leverage_amount = amount - lp_amount;
+                self.btc_leveraged.write(self.btc_leveraged.read() + leverage_amount);
                 return;
             }
-            
-            let lp_ratio = Math::div_fixed(self.btc_in_lp.read(), total_in_strategy);
-            let lp_withdraw = Math::mul_fixed(amount, lp_ratio);
-            let leverage_withdraw = amount - lp_withdraw;
-            
-            self.btc_in_lp.write(self.btc_in_lp.read() - lp_withdraw);
-            self.btc_leveraged.write(self.btc_leveraged.read() - leverage_withdraw);
+
+            // Transfer BTC to leverage manager for allocation
+            let btc = IERC20Dispatcher { contract_address: self.btc_token.read() };
+            btc.transfer(lm_address, amount);
+
+            let lm = ILeverageManagerDispatcher { contract_address: lm_address };
+            lm.allocate(amount);
+
+            // Sync state
+            let (btc_lp, btc_lev, usdc_debt) = lm.get_position_info();
+            self.btc_in_lp.write(btc_lp);
+            self.btc_leveraged.write(btc_lev);
+            self.usdc_borrowed.write(usdc_debt);
+        }
+
+        /// Withdraw BTC from strategy via LeverageManager
+        fn _withdraw_from_strategy(ref self: ContractState, amount: u256) {
+            let lm_address = self.leverage_manager.read();
+            let zero_address: ContractAddress = 0.try_into().unwrap();
+
+            if lm_address == zero_address {
+                // Fallback: tracking only
+                let total_in_strategy = self.btc_in_lp.read() + self.btc_leveraged.read();
+                if total_in_strategy == 0 {
+                    return;
+                }
+                let lp_ratio = Math::div_fixed(self.btc_in_lp.read(), total_in_strategy);
+                let lp_withdraw = Math::mul_fixed(amount, lp_ratio);
+                let leverage_withdraw = amount - lp_withdraw;
+                self.btc_in_lp.write(self.btc_in_lp.read() - lp_withdraw);
+                self.btc_leveraged.write(self.btc_leveraged.read() - leverage_withdraw);
+                return;
+            }
+
+            let lm = ILeverageManagerDispatcher { contract_address: lm_address };
+            lm.deallocate(amount);
+
+            // Sync state
+            let (btc_lp, btc_lev, usdc_debt) = lm.get_position_info();
+            self.btc_in_lp.write(btc_lp);
+            self.btc_leveraged.write(btc_lev);
+            self.usdc_borrowed.write(usdc_debt);
         }
 
         /// Get BTC balance of vault
@@ -400,20 +512,39 @@ pub mod VaultManager {
             btc.balance_of(get_contract_address())
         }
 
-        /// Get collateral value in BTC terms
+        /// Get collateral value in USDC terms
         fn _get_collateral_value(self: @ContractState) -> u256 {
-            self.btc_in_lp.read() + self.btc_leveraged.read()
+            let total_btc = self.btc_in_lp.read() + self.btc_leveraged.read();
+            let btc_price = self._get_btc_price();
+            Math::mul_fixed(total_btc, btc_price)
         }
 
-        /// Convert USDC amount to BTC equivalent
+        /// Convert USDC amount to BTC equivalent using oracle
         fn _convert_usdc_to_btc(self: @ContractState, usdc_amount: u256) -> u256 {
-            // This will use oracle to get BTC price
-            // For now, placeholder - assumes 1 USDC = 1/60000 BTC (placeholder)
             if usdc_amount == 0 {
                 return 0;
             }
-            // Placeholder: will use oracle later
-            usdc_amount / 60000
+
+            let btc_price = self._get_btc_price();
+            if btc_price == 0 {
+                return 0;
+            }
+
+            Math::div_fixed(usdc_amount, btc_price)
+        }
+
+        /// Get BTC/USD price from Pragma oracle (with fallback)
+        fn _get_btc_price(self: @ContractState) -> u256 {
+            let pragma_address = self.pragma_adapter.read();
+            let zero_address: ContractAddress = 0.try_into().unwrap();
+
+            if pragma_address == zero_address {
+                // Fallback: hardcoded price for testing
+                return 60000 * Constants::SCALE;
+            }
+
+            let pragma = IPragmaAdapterDispatcher { contract_address: pragma_address };
+            pragma.get_btc_price()
         }
     }
 }
