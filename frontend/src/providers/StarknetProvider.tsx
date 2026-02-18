@@ -1,20 +1,20 @@
 import { ReactNode } from 'react';
-import { StarknetConfig, publicProvider, InjectedConnector } from '@starknet-react/core';
-import { mainnet, sepolia } from '@starknet-react/chains';
+import { StarknetConfig, publicProvider, argent, braavos } from '@starknet-react/core';
+import { sepolia } from '@starknet-react/chains';
 
 interface StarknetProviderProps {
   children: ReactNode;
 }
 
 const connectors = [
-  new InjectedConnector({ options: { id: 'argentX', name: 'Argent X' } }),
-  new InjectedConnector({ options: { id: 'braavos', name: 'Braavos' } }),
+  braavos(),
+  argent(),
 ];
 
 export function StarknetProvider({ children }: StarknetProviderProps) {
   return (
     <StarknetConfig
-      chains={[sepolia, mainnet]}
+      chains={[sepolia]}
       provider={publicProvider()}
       connectors={connectors}
       autoConnect
