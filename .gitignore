@@ -35,5 +35,14 @@ dist/
 .env.local
 .env.production
 
+# Sncast accounts
+accounts.json
+contracts/accounts.json
+
+# Environment files
+.env
+.env.*
+!.env.example
+
 # Misc
 *.log
