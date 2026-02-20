@@ -3,6 +3,15 @@ import { useAccount, useDisconnect } from '@starknet-react/core';
 import { HomeIcon } from '@/components/ui/icons/HomeIcon';
 import StarkYieldLogoBg from '@/components/ui/StarkYieldLogoBg';
 import { motion, useAnimation } from 'framer-motion';
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from 'recharts';
 import './VaultPage.css';
 
 interface VaultPageProps {
@@ -10,7 +19,29 @@ interface VaultPageProps {
 }
 
 const BTC_APY = 4.12;
+const BTC_APR = 4.04;
 const USER_BALANCE = 0; // Simulated wallet balance in wBTC
+
+type ChartPeriod = '3m' | '6m' | '1y';
+
+function generateSimulationData(depositUSD: number, period: ChartPeriod) {
+  const months = period === '3m' ? 3 : period === '6m' ? 6 : 12;
+  const monthlyRate = BTC_APR / 100 / 12;
+  const compoundMonthlyRate = Math.pow(1 + BTC_APY / 100, 1 / 12) - 1;
+  const data = [];
+  for (let i = 0; i <= months; i++) {
+    const aprValue = depositUSD * (1 + monthlyRate * i);
+    const apyValue = depositUSD * Math.pow(1 + compoundMonthlyRate, i);
+    const date = new Date();
+    date.setMonth(date.getMonth() + i);
+    data.push({
+      name: date.toLocaleString('en-US', { month: 'short', year: '2-digit' }),
+      apr: Math.round(aprValue * 100) / 100,
+      apy: Math.round(apyValue * 100) / 100,
+    });
+  }
+  return data;
+}
 
 /* ---- Animated Delete Icon ---- */
 const LID_VARIANTS = {
@@ -116,6 +147,8 @@ export default function VaultPage({ onNavigateHome }: VaultPageProps) {
   const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw'>('deposit');
   const [amount, setAmount] = useState('');
   const [showError, setShowError] = useState(false);
+  const [displayCurrency, setDisplayCurrency] = useState<'USD' | 'BTC'>('USD');
+  const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('3m');
 
   const shortAddress = address
     ? `${String(address).slice(0, 6)}...${String(address).slice(-4)}`
@@ -148,6 +181,23 @@ export default function VaultPage({ onNavigateHome }: VaultPageProps) {
   };
 
   const isDisabled = numericAmount <= 0;
+
+  const simulationData = useMemo(
+    () => generateSimulationData(dollarValue > 0 ? dollarValue : 10000, chartPeriod),
+    [dollarValue, chartPeriod]
+  );
+
+  const projectedGainAPR = useMemo(() => {
+    const last = simulationData[simulationData.length - 1];
+    const base = simulationData[0];
+    return last.apr - base.apr;
+  }, [simulationData]);
+
+  const projectedGainAPY = useMemo(() => {
+    const last = simulationData[simulationData.length - 1];
+    const base = simulationData[0];
+    return last.apy - base.apy;
+  }, [simulationData]);
 
   return (
     <div className="vault-page">
@@ -291,9 +341,172 @@ export default function VaultPage({ onNavigateHome }: VaultPageProps) {
         </div>
       </div>
 
-        {/* Right: logo */}
-        <div className="vault-logo-col">
-          <StarkYieldLogoBg size={700} />
+        {/* Right column: logo + position + chart */}
+        <div className="vault-right-col">
+          {/* Logo */}
+          <div className="vault-logo-col">
+            <StarkYieldLogoBg size={700} />
+          </div>
+
+          {/* My Position */}
+          <div className="vault-position-section">
+            <div className="vault-position-header">
+              <span className="vault-position-title">My Deposit</span>
+              <div className="vault-position-controls">
+                <button
+                  className={`vault-position-toggle${displayCurrency === 'USD' ? ' active' : ''}`}
+                  onClick={() => setDisplayCurrency('USD')}
+                  type="button"
+                >
+                  USD
+                </button>
+                <button
+                  className={`vault-position-toggle${displayCurrency === 'BTC' ? ' active' : ''}`}
+                  onClick={() => setDisplayCurrency('BTC')}
+                  type="button"
+                >
+                  BTC
+                </button>
+              </div>
+            </div>
+
+            <div className="vault-position-amount">
+              <span className="vault-position-value">
+                {displayCurrency === 'USD'
+                  ? `$${(0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : (0).toFixed(4)}
+              </span>
+              <span className="vault-position-currency">
+                {displayCurrency === 'USD' ? '' : 'wBTC'}
+              </span>
+            </div>
+
+            <div className="vault-position-bar-container">
+              <div className="vault-position-bar">
+                <div className="vault-position-bar-fill" style={{ width: '0%' }} />
+              </div>
+            </div>
+
+            {/* Transactions */}
+            <div className="vault-transactions-section">
+              <div className="vault-transactions-header">
+                <span className="vault-transactions-title">Your transactions</span>
+                <div className="vault-transactions-filters">
+                  <button className="vault-filter-btn" type="button">All</button>
+                </div>
+              </div>
+              <div className="vault-no-transactions">No transactions found.</div>
+            </div>
+          </div>
+
+          {/* Simulation Chart */}
+          <div className="vault-chart-section">
+            <div className="vault-chart-header">
+              <span className="vault-chart-title">Yield Simulation</span>
+              <div className="vault-chart-controls">
+                {(['3m', '6m', '1y'] as ChartPeriod[]).map((p) => (
+                  <button
+                    key={p}
+                    className={`vault-chart-period-btn${chartPeriod === p ? ' active' : ''}`}
+                    onClick={() => setChartPeriod(p)}
+                    type="button"
+                  >
+                    {p === '3m' ? '3 months' : p === '6m' ? '6 months' : '1 year'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="vault-chart-container">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={simulationData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="gradAPR" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#4444cc" stopOpacity={0.25} />
+                      <stop offset="100%" stopColor="#4444cc" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="gradAPY" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#8888ee" stopOpacity={0.25} />
+                      <stop offset="100%" stopColor="#8888ee" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
+                  <XAxis
+                    dataKey="name"
+                    tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 11 }}
+                    axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+                    tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+                  />
+                  <YAxis
+                    tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 11 }}
+                    axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+                    tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
+                    tickFormatter={(v: number) => `$${(v / 1000).toFixed(1)}k`}
+                    domain={['dataMin - 100', 'dataMax + 100']}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      background: 'rgba(20, 20, 30, 0.95)',
+                      border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '8px',
+                      color: '#fff',
+                      fontSize: '0.8rem',
+                    }}
+                    formatter={(value: number, name: string) => [
+                      `$${value.toLocaleString('en-US', { minimumFractionDigits: 2 })}`,
+                      name === 'apr' ? 'APR (Simple)' : 'APY (Compound)',
+                    ]}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="apr"
+                    stroke="#4444cc"
+                    strokeWidth={2}
+                    fill="url(#gradAPR)"
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="apy"
+                    stroke="#8888ee"
+                    strokeWidth={2}
+                    fill="url(#gradAPY)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="vault-chart-legend">
+              <div className="vault-chart-legend-item">
+                <span className="vault-chart-legend-dot" style={{ background: '#4444cc' }} />
+                APR ({BTC_APR}%) — Simple
+              </div>
+              <div className="vault-chart-legend-item">
+                <span className="vault-chart-legend-dot" style={{ background: '#8888ee' }} />
+                APY ({BTC_APY}%) — Compound
+              </div>
+            </div>
+
+            <div className="vault-chart-stats">
+              <div className="vault-chart-stat">
+                <span className="vault-chart-stat-label">Deposit</span>
+                <span className="vault-chart-stat-value">
+                  ${(dollarValue > 0 ? dollarValue : 10000).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="vault-chart-stat">
+                <span className="vault-chart-stat-label">Projected gain (APR)</span>
+                <span className="vault-chart-stat-value purple">
+                  +${projectedGainAPR.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+              <div className="vault-chart-stat">
+                <span className="vault-chart-stat-label">Projected gain (APY)</span>
+                <span className="vault-chart-stat-value purple">
+                  +${projectedGainAPY.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </span>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>

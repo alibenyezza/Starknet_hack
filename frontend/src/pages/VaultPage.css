@@ -1,7 +1,7 @@
 .vault-page {
   height: 100vh;
-  overflow: hidden;
-  padding: clamp(5rem, 8vw, 6rem) clamp(1rem, 4vw, 2rem) clamp(1rem, 2vw, 2rem);
+  overflow-y: auto;
+  padding: clamp(5rem, 8vw, 6rem) clamp(1rem, 4vw, 2rem) clamp(2rem, 4vw, 4rem);
   position: relative;
   z-index: 1;
   display: flex;
@@ -95,29 +95,39 @@
 /* ---- Two-column layout ---- */
 .vault-layout {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 4rem;
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
-  flex: 1;
-  min-height: 0;
 }
 
 .vault-widget-col {
   flex: 0 0 440px;
   max-width: 440px;
-  position: relative;
+  position: sticky;
+  top: clamp(5rem, 8vw, 6rem);
   z-index: 2;
+  align-self: flex-start;
+}
+
+.vault-right-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+  min-height: 0;
+  padding-bottom: 2rem;
 }
 
 .vault-logo-col {
-  flex: 1;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   pointer-events: none;
   opacity: 0.12;
+  padding-right: 0;
+  margin-left: 2rem;
 }
 
 @media (max-width: 900px) {
@@ -129,6 +139,12 @@
   .vault-widget-col {
     flex: none;
     max-width: 100%;
+    width: 100%;
+    position: relative;
+    top: 0;
+  }
+
+  .vault-right-col {
     width: 100%;
   }
 
@@ -379,4 +395,256 @@
   color: rgba(255, 255, 255, 0.25);
   text-align: center;
   line-height: 1.5;
+}
+
+/* ---- My Position Section ---- */
+.vault-position-section {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+
+.vault-position-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+
+.vault-position-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.vault-position-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.vault-position-toggle {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.3rem 0.65rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.vault-position-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.vault-position-toggle.active {
+  background: rgba(68, 68, 204, 0.15);
+  border-color: rgba(68, 68, 204, 0.3);
+  color: #8888ee;
+}
+
+.vault-position-amount {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.vault-position-value {
+  font-size: 2rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.9);
+  line-height: 1;
+}
+
+.vault-position-currency {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.35);
+  font-weight: 500;
+}
+
+.vault-position-bar-container {
+  margin-top: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.vault-position-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.vault-position-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4444cc, #6666dd);
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+/* ---- Transactions Section ---- */
+.vault-transactions-section {
+  margin-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 1.25rem;
+}
+
+.vault-transactions-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.vault-transactions-title {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.vault-transactions-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.vault-filter-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.75rem;
+  padding: 0.25rem 0.6rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.vault-filter-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.vault-no-transactions {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.82rem;
+  background: transparent;
+  border-radius: 10px;
+}
+
+/* ---- Simulation Chart Section ---- */
+.vault-chart-section {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+
+.vault-chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+}
+
+.vault-chart-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.vault-chart-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.vault-chart-period-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.72rem;
+  font-weight: 500;
+  padding: 0.25rem 0.55rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.vault-chart-period-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.vault-chart-period-btn.active {
+  background: rgba(68, 68, 204, 0.15);
+  border-color: rgba(68, 68, 204, 0.3);
+  color: #8888ee;
+}
+
+.vault-chart-container {
+  width: 100%;
+  height: 240px;
+}
+
+.vault-chart-legend {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.vault-chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.vault-chart-legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.vault-chart-stats {
+  display: flex;
+  gap: 1.5rem;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.vault-chart-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.vault-chart-stat-label {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.35);
+}
+
+.vault-chart-stat-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.vault-chart-stat-value.purple {
+  color: #8888ee;
 }
