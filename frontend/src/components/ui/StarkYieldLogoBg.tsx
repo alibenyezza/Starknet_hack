@@ -1,0 +1,87 @@
+import { useRef, useEffect } from 'react';
+import './StarkYieldLogoBg.css';
+
+interface StarkYieldLogoBgProps {
+  size?: number;
+}
+
+export default function StarkYieldLogoBg({ size = 560 }: StarkYieldLogoBgProps) {
+  const filterRef = useRef<SVGFEDisplacementMapElement>(null);
+  const animRef = useRef<number | null>(null);
+  const currentScale = useRef(0);
+
+  useEffect(() => {
+    const targetScale = 10; // Always-on distortion
+    const animate = () => {
+      currentScale.current += (targetScale - currentScale.current) * 0.08;
+
+      if (filterRef.current) {
+        filterRef.current.setAttribute('scale', String(currentScale.current));
+      }
+
+      animRef.current = requestAnimationFrame(animate);
+    };
+
+    animRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      if (animRef.current) cancelAnimationFrame(animRef.current);
+    };
+  }, []);
+
+  return (
+    <div
+      className="starkyield-logo-bg"
+      style={{ display: 'inline-block' }}
+    >
+      <svg
+        width={size}
+        height={size * (115 / 130)}
+        viewBox="0 0 130 115"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <defs>
+          <filter id="wave-distortion">
+            <feTurbulence
+              type="fractalNoise"
+              baseFrequency="0.03"
+              numOctaves={2}
+              result="noise"
+            >
+              <animate
+                attributeName="baseFrequency"
+                dur="8s"
+                values="0.03;0.04;0.03"
+                repeatCount="indefinite"
+              />
+            </feTurbulence>
+            <feDisplacementMap
+              ref={filterRef}
+              in="SourceGraphic"
+              in2="noise"
+              scale="0"
+              xChannelSelector="R"
+              yChannelSelector="G"
+            />
+          </filter>
+        </defs>
+
+        <g filter="url(#wave-distortion)">
+          <path
+            d="M77.0694 6.29138C77.4273 5.64929 78.4039 6.09186 78.157 6.78425L63.3035 48.4414C63.1331 48.9192 63.5965 49.3792 64.073 49.2054L130 25.1613L66.4473 57.7884C66.1696 57.931 66.0479 58.263 66.1677 58.5513L86.3686 107.16C86.6517 107.842 85.6926 108.333 85.3054 107.705L58.1841 63.7067C58.0191 63.439 57.6752 63.3444 57.3966 63.4901L1.79724 92.5576L49.1847 58.5023C49.5071 58.2707 49.5191 57.7953 49.2088 57.5476L0 18.2719L52.3779 49.3285C52.6679 49.5004 53.0426 49.3993 53.2067 49.1048L77.0694 6.29138Z"
+            fill="white"
+          />
+          <path
+            d="M58.4845 93.2086C58.3883 93.8968 57.3941 93.8968 57.2979 93.2086L52.9927 62.4092C52.9459 62.0743 52.6315 61.8446 52.2982 61.9016L18.3605 67.7135C17.6565 67.8341 17.3702 66.8429 18.0302 66.5696L49.1734 53.6694C49.5154 53.5277 49.6484 53.1128 49.4523 52.7987L32.6857 25.9365C32.3133 25.3399 33.0957 24.7007 33.606 25.1845L57.4791 47.8173C57.7102 48.0364 58.0723 48.0364 58.3034 47.8173L82.1764 25.1845C82.6868 24.7007 83.4692 25.3399 83.0968 25.9365L66.3301 52.7987C66.1341 53.1128 66.267 53.5277 66.6091 53.6694L97.7523 66.5696C98.4122 66.8429 98.126 67.8341 97.4219 67.7135L63.4842 61.9016C63.151 61.8446 62.8366 62.0744 62.7898 62.4092L58.4845 93.2086Z"
+            fill="white"
+          />
+          <path
+            d="M58.1105 50.0234L59.0965 54.6572L63.8081 54.163L59.7059 56.5326L61.6318 60.8609L58.1105 57.6916L54.5892 60.8609L56.5152 56.5326L52.413 54.163L57.1246 54.6572L58.1105 50.0234Z"
+            fill="black"
+          />
+        </g>
+      </svg>
+    </div>
+  );
+}

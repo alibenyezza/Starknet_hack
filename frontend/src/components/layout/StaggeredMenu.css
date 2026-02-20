@@ -4,6 +4,7 @@
   height: 100%;
   z-index: 40;
   pointer-events: none;
+  font-family: var(--font-ui);
 }
 
 .staggered-menu-wrapper.fixed-wrapper {
@@ -303,31 +304,13 @@
   gap: 0.75rem;
 }
 
-.sm-btc-price {
-  display: none;
-  align-items: center;
-  gap: 0.4rem;
-  padding: 0.35rem 0.7rem;
-  background: rgba(39, 39, 87, 0.3);
-  border: 1px solid rgba(39, 39, 87, 0.5);
-  border-radius: 8px;
-  font-size: 0.8rem;
-  transition: border-color 0.2s, background 0.2s;
+.sm-btc-price-star {
+  display: none !important;
 }
 
-.sm-btc-price:hover {
-  background: rgba(39, 39, 87, 0.45);
-  border-color: #4444c2;
-}
-
-.sm-btc-label {
-  color: rgba(255, 255, 255, 0.5);
-  font-weight: 500;
-}
-
-.sm-btc-value {
-  color: #ffffff;
-  font-weight: 600;
+.sm-btc-price-star .inner-content {
+  padding: 8px 14px;
+  border-radius: 12px;
 }
 
 .sm-btc-change-positive {
@@ -340,26 +323,14 @@
   font-size: 0.75rem;
 }
 
-.sm-connect-btn {
-  padding: 0.45rem 1rem;
-  background: #272757;
-  border: 1px solid rgba(68, 68, 194, 0.5);
-  border-radius: 8px;
-  color: #fff;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s, box-shadow 0.2s;
-}
-
-.sm-connect-btn:hover {
-  background: #3d3d8f;
-  box-shadow: 0 0 18px rgba(39, 39, 87, 0.6);
+.sm-header-right .star-border-container .inner-content {
+  padding: 8px 16px;
+  border-radius: 12px;
 }
 
 @media (min-width: 640px) {
-  .sm-btc-price {
-    display: flex;
+  .sm-btc-price-star {
+    display: inline-block !important;
   }
 }
 

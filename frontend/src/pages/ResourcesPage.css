@@ -1,12 +1,13 @@
 .docs-page {
   display: flex;
   min-height: 100vh;
-  background: transparent;
+  background: rgba(0, 0, 0, 0.85);
   padding-top: 72px;
   position: relative;
   max-width: 1280px;
   margin: 0 auto;
   width: 100%;
+  font-family: var(--font-ui);
 }
 
 .docs-mobile-toggle {
