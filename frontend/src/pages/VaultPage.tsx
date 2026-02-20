@@ -201,6 +201,11 @@ export default function VaultPage({ onNavigateHome }: VaultPageProps) {
 
   return (
     <div className="vault-page">
+      {/* Fixed centered background logo */}
+      <div className="vault-bg-logo">
+        <StarkYieldLogoBg size={700} />
+      </div>
+
       {/* Top bar */}
       <div className="vault-topbar">
         <button className="vault-back-btn" onClick={onNavigateHome} type="button">
@@ -341,13 +346,8 @@ export default function VaultPage({ onNavigateHome }: VaultPageProps) {
         </div>
       </div>
 
-        {/* Right column: logo + position + chart */}
+        {/* Right column: position + chart */}
         <div className="vault-right-col">
-          {/* Logo */}
-          <div className="vault-logo-col">
-            <StarkYieldLogoBg size={700} />
-          </div>
-
           {/* My Position */}
           <div className="vault-position-section">
             <div className="vault-position-header">

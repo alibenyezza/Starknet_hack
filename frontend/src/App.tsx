@@ -22,7 +22,7 @@ import clsx from 'clsx';
 import cairoLogo from '@/assets/Cairo_logo_500x500.svg';
 import starknetLogo from '@/assets/SN-Stacked-Gradient - On dark bg.svg';
 import vesuLogo from '@/assets/vesu logo 1.svg';
-import starkLogo from '@/assets/logo stark.svg';
+import starkLogo from '@/assets/logo stark vf.svg';
 
 type Page = 'home' | 'vault' | 'docs' | 'team';
 
