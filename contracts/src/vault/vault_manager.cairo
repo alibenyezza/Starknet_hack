@@ -28,6 +28,8 @@ pub trait IVaultManager<TContractState> {
     fn emergency_withdraw(ref self: TContractState);
     fn set_paused(ref self: TContractState, paused: bool);
     fn set_target_leverage(ref self: TContractState, leverage: u256);
+    fn set_leverage_manager(ref self: TContractState, leverage_manager: ContractAddress);
+    fn set_pragma_adapter(ref self: TContractState, pragma_adapter: ContractAddress);
 
     // View functions
     fn get_total_assets(self: @TContractState) -> u256;
@@ -304,6 +306,19 @@ pub mod VaultManager {
             self.target_leverage.write(leverage);
         }
 
+        /// Update the LeverageManager address (admin only).
+        /// Allows connecting a newly deployed LeverageManager without redeploying the vault.
+        fn set_leverage_manager(ref self: ContractState, leverage_manager: ContractAddress) {
+            assert(get_caller_address() == self.owner.read(), 'Only owner');
+            self.leverage_manager.write(leverage_manager);
+        }
+
+        /// Update the Pragma oracle adapter address (admin only).
+        fn set_pragma_adapter(ref self: ContractState, pragma_adapter: ContractAddress) {
+            assert(get_caller_address() == self.owner.read(), 'Only owner');
+            self.pragma_adapter.write(pragma_adapter);
+        }
+
         // ═══════════════════════════════════════════════════════
         // VIEW FUNCTIONS
         // ═══════════════════════════════════════════════════════
@@ -389,7 +404,12 @@ pub mod VaultManager {
                 return amount;
             }
 
-            Math::mul_fixed(amount, total_shares) / total_assets
+            // Direct proportion — do NOT use mul_fixed here.
+            // total_shares is a raw count, not a 1e18-scaled fixed-point value.
+            // Wrong formula: Math::mul_fixed(amount, total_shares) / total_assets
+            //   = amount * total_shares / 1e18 / total_assets  (double division!)
+            // Correct: shares = amount * total_shares / total_assets
+            amount * total_shares / total_assets
         }
 
         /// Calculate BTC amount for shares
@@ -398,7 +418,8 @@ pub mod VaultManager {
             assert(total_shares > 0, 'No shares exist');
 
             let total_assets = self.get_total_assets();
-            Math::mul_fixed(shares, total_assets) / total_shares
+            // Direct proportion: btc = shares * total_assets / total_shares
+            shares * total_assets / total_shares
         }
 
         /// Transfer BTC from user to vault

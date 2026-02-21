@@ -26,8 +26,12 @@ A permissionless `rebalance()` function keeps the leverage ratio at target (2x d
 | Contract | Address | Explorer |
 |----------|---------|----------|
 | MockWBTC (Faucet) | `0x066cd5e247ef08479917e46a387057706aeb57cfc5bfa27b225352b304424163` | [View](https://sepolia.starkscan.co/contract/0x066cd5e247ef08479917e46a387057706aeb57cfc5bfa27b225352b304424163) |
-| SyBtcToken | `0x03184feec0a8d5ce9e7d2a282568996322ce04b81301179379a7343c03c0b7be` | [View](https://sepolia.starkscan.co/contract/0x03184feec0a8d5ce9e7d2a282568996322ce04b81301179379a7343c03c0b7be) |
-| VaultManager | `0x01b24b14b91b59930a71ca6f84da7dcb1883e576f4d6fdceecc8194099a228ca` | [View](https://sepolia.starkscan.co/contract/0x01b24b14b91b59930a71ca6f84da7dcb1883e576f4d6fdceecc8194099a228ca) |
+| SyBtcToken | `0x05cda6e0cf0c7656d76c61bfbd7d138532b6aa8245dbb070f50f015e689c2afd` | [View](https://sepolia.starkscan.co/contract/0x05cda6e0cf0c7656d76c61bfbd7d138532b6aa8245dbb070f50f015e689c2afd) |
+| VaultManager | `0x02d74eea61e7d67bd9f3b54973bc9cd51d8a7526bc93168dce622647c630f83f` | [View](https://sepolia.starkscan.co/contract/0x02d74eea61e7d67bd9f3b54973bc9cd51d8a7526bc93168dce622647c630f83f) |
+| MockPragmaAdapter | `0x069751dd1f1d78907f361a725af5d06937e5c25839fcffaf898fbd1e79fd49c2` | [View](https://sepolia.starkscan.co/contract/0x069751dd1f1d78907f361a725af5d06937e5c25839fcffaf898fbd1e79fd49c2) |
+| MockEkuboAdapter | `0x05fd7268228036c8237674709b699a732e7c2ae3c7d20ef1306950f3626610f9` | [View](https://sepolia.starkscan.co/contract/0x05fd7268228036c8237674709b699a732e7c2ae3c7d20ef1306950f3626610f9) |
+| MockLendingAdapter | `0x0184b3fb971cd3ea627727c32e07b9a071bf4e68de42c61567f8d04ef80a474b` | [View](https://sepolia.starkscan.co/contract/0x0184b3fb971cd3ea627727c32e07b9a071bf4e68de42c61567f8d04ef80a474b) |
+| LeverageManager | `0x00bf47cb391843b4103b6c7dd5fdfea60dc8a39e10a7f980b32c1a66170567c7` | [View](https://sepolia.starkscan.co/contract/0x00bf47cb391843b4103b6c7dd5fdfea60dc8a39e10a7f980b32c1a66170567c7) |
 
 ### Try It Out
 
@@ -52,7 +56,7 @@ To see your MockWBTC balance in Braavos/ArgentX:
 
 To also see your syBTC shares:
 ```
-0x03184feec0a8d5ce9e7d2a282568996322ce04b81301179379a7343c03c0b7be
+0x05cda6e0cf0c7656d76c61bfbd7d138532b6aa8245dbb070f50f015e689c2afd
 ```
 
 ## Architecture
@@ -79,11 +83,14 @@ To also see your syBTC shares:
                        │
 ┌──────────────────────▼───────────────────────────┐
 │             INTEGRATION LAYER                     │
-│  PragmaAdapter ─── BTC/USD price oracle           │
-│  EkuboAdapter  ─── DEX swaps + LP positions       │
-│  VesuAdapter   ─── lending/borrowing              │
+│  MockPragmaAdapter ─── BTC/USD price (hardcoded)  │
+│  MockEkuboAdapter  ─── simulated swaps + LP       │
+│  MockLendingAdapter─── simulated lending          │
 └──────────────────────────────────────────────────┘
 ```
+
+> **Note:** The integration layer currently uses mock adapters on Sepolia testnet.
+> Real Ekubo, Vesu and Pragma adapter contracts are written and ready to swap in for mainnet.
 
 ## Project Structure
 
@@ -93,6 +100,7 @@ contracts/src/
 ├── vault/
 │   ├── vault_manager.cairo            # Main contract: deposit, withdraw, rebalance
 │   ├── sy_btc_token.cairo             # ERC20 receipt token
+│   ├── mock_usdc.cairo                # ERC20 testnet USDC faucet
 │   └── mock_wbtc.cairo                # ERC20 testnet faucet token
 ├── strategy/
 │   ├── il_eliminator.cairo            # IL calculation engine
@@ -101,9 +109,12 @@ contracts/src/
 │   └── risk_manager.cairo             # Health factor, limits, price checks
 ├── integrations/
 │   ├── ierc20.cairo                   # ERC20 interface
-│   ├── pragma_oracle.cairo            # Pragma price feed adapter
-│   ├── ekubo.cairo                    # Ekubo DEX adapter
-│   └── vesu.cairo                     # Vesu lending adapter
+│   ├── pragma_oracle.cairo            # Pragma price feed adapter (real)
+│   ├── ekubo.cairo                    # Ekubo DEX adapter (real)
+│   ├── vesu.cairo                     # Vesu lending adapter (real)
+│   ├── mock_pragma.cairo              # Mock oracle (testnet)
+│   ├── mock_ekubo.cairo               # Mock DEX (testnet)
+│   └── mock_lending.cairo             # Mock lending (testnet)
 └── utils/
     ├── constants.cairo                # Protocol parameters
     └── math.cairo                     # Fixed-point arithmetic (sqrt, mul, div)
@@ -119,60 +130,52 @@ frontend/src/
 │   └── useBTCPrice.ts                 # BTC/USD price feed
 ├── pages/
 │   ├── VaultPage.tsx                  # Main vault UI (deposit/withdraw/faucet)
-│   ├── VaultPage.css
 │   └── ...
 ├── config/
 │   └── constants.ts                   # Contract addresses, network config
 └── providers/
     └── StarknetProvider.tsx            # Wallet connection (Braavos/ArgentX)
 
-contracts/tests/
-├── test_sy_btc_token.cairo            # 5 tests
-├── test_vault_manager.cairo           # 10 tests
-├── test_il_eliminator.cairo           # 12 tests
-├── test_risk_manager.cairo            # 16 tests
-└── test_math.cairo                    # 14 tests
-
 scripts/
-└── deploy.sh                          # Automated deployment script
+├── deploy.sh                          # Full deployment script
+├── redeploy_vault.sh                  # Redeploy SyBtcToken + VaultManager only
+├── redeploy_ekubo.sh                  # Redeploy MockEkuboAdapter only
+├── redeploy_lending.sh                # Redeploy MockLendingAdapter only
+└── redeploy_pragma.sh                 # Redeploy MockPragmaAdapter only
 ```
 
 ## What's Implemented
 
 ### Smart Contracts
 
-#### Vault (100%)
+#### Vault (fully functional on Sepolia)
 - `deposit()` — transfer BTC, mint syBTC, allocate to strategy
 - `withdraw()` — burn syBTC, deallocate, transfer BTC back
 - `rebalance()` — permissionless keeper function, adjusts leverage to target
 - `emergency_withdraw()` — admin closes all positions, pauses vault
 - View functions: total assets, share price, health factor, leverage ratio, BTC price
 
-#### IL Eliminator (100%)
+#### IL Eliminator (code complete, not yet wired into vault)
 - `calculate_il()` — exact IL formula with fixed-point sqrt
 - `calculate_leverage_pnl()` — leveraged position P&L
 - `calculate_optimal_leverage()` — volatility-based optimal leverage (clamped 1.5x-3x)
 - `calculate_net_position()` — net result after IL and leverage gains
 
-#### Leverage Manager (100%)
+#### Leverage Manager (fully functional on Sepolia)
 - `allocate()` — split 50/50 between Ekubo LP and Vesu leverage
 - `deallocate()` — proportional withdrawal, repay debt first
 - `increase_leverage()` / `reduce_leverage()` — adjust positions
 - `close_all_positions()` — emergency unwinding
 
-#### Risk Manager (100%)
+#### Risk Manager (code complete, not yet wired into vault)
 - Health factor classification (Safe > 2.0, Moderate > 1.5, Warning > 1.2, Danger)
 - Deleverage amount calculation
 - Price sanity checks (max 10% deviation)
 - Daily withdrawal limits with reset
 
-#### Integration Adapters (100%)
-- Pragma Oracle — BTC/USD price with staleness check, decimal normalization
-- Ekubo DEX — swap BTC/USDC, add/remove liquidity
-- Vesu Lending — deposit collateral, borrow, repay, withdraw
-
-#### Tests (61 tests, all passing)
-- Math utilities, IL calculations, risk management, vault operations, token mechanics
+#### Integration Adapters
+- **Real adapters** (written, ready for mainnet): Pragma Oracle, Ekubo DEX, Vesu Lending
+- **Mock adapters** (active on Sepolia testnet): simulate all flows using faucet tokens
 
 ### Frontend
 - Wallet connection (Braavos / ArgentX) on Sepolia
@@ -215,8 +218,6 @@ cd contracts
 snforge test
 ```
 
-Expected output: `Tests: 61 passed, 0 failed, 0 ignored, 0 filtered out`
-
 ### Deploy to Sepolia
 
 ```bash
@@ -231,7 +232,7 @@ bash ../scripts/deploy.sh
 - **Frontend:** React + TypeScript + Vite
 - **Wallet:** starknet-react + starknet.js
 - **Dependencies:** OpenZeppelin Cairo Contracts
-- **Oracles:** Pragma Network
-- **DEX:** Ekubo Protocol
-- **Lending:** Vesu Finance
+- **Oracles:** Pragma Network (mock on testnet)
+- **DEX:** Ekubo Protocol (mock on testnet)
+- **Lending:** Vesu Finance (mock on testnet)
 - **RPC:** Cartridge (Sepolia)

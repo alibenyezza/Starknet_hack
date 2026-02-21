@@ -1,12 +1,14 @@
 use starknet::ContractAddress;
 
 /// Pragma Oracle data structure for price feeds
+/// Matches the real PragmaPricesResponse returned by get_spot_median on Sepolia
 #[derive(Drop, Copy, Serde)]
 pub struct PragmaPrice {
     pub price: u128,
     pub decimals: u32,
     pub last_updated_timestamp: u64,
     pub num_sources_aggregated: u32,
+    pub expiration_timestamp: Option<u64>, // required field in real Pragma response
 }
 
 /// Interface for Pragma Oracle on Starknet
