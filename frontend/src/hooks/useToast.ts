@@ -1,26 +1,29 @@
 import { useState, useCallback } from 'react';
 import type { ToastType } from '@/components/ui/Toast';
 
+interface ToastLink { href: string; label: string }
+
 interface ToastItem {
   id: string;
   message: string;
   type: ToastType;
+  link?: ToastLink;
 }
 
 export function useToast() {
   const [toasts, setToasts] = useState<ToastItem[]>([]);
 
-  const addToast = useCallback((message: string, type: ToastType = 'info') => {
+  const addToast = useCallback((message: string, type: ToastType = 'info', link?: ToastLink) => {
     const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { id, message, type }]);
+    setToasts((prev) => [...prev, { id, message, type, link }]);
   }, []);
 
   const removeToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((toast) => toast.id !== id));
   }, []);
 
-  const success = useCallback((message: string) => {
-    addToast(message, 'success');
+  const success = useCallback((message: string, link?: ToastLink) => {
+    addToast(message, 'success', link);
   }, [addToast]);
 
   const error = useCallback((message: string) => {

@@ -1,7 +1,6 @@
 import { ReactNode } from 'react';
 import { StarknetConfig, jsonRpcProvider, argent, braavos } from '@starknet-react/core';
 import { sepolia } from '@starknet-react/chains';
-import { NETWORK } from '@/config/constants';
 
 interface StarknetProviderProps {
   children: ReactNode;
@@ -12,17 +11,14 @@ const connectors = [
   argent(),
 ];
 
-function rpcProvider() {
-  return jsonRpcProvider({
-    rpc: () => ({ nodeUrl: NETWORK.RPC_URL }),
-  });
-}
+// /rpc is proxied by Vite to BlastAPI (avoids CORS in development)
+const rpc = () => ({ nodeUrl: '/rpc' });
 
 export function StarknetProvider({ children }: StarknetProviderProps) {
   return (
     <StarknetConfig
       chains={[sepolia]}
-      provider={rpcProvider()}
+      provider={jsonRpcProvider({ rpc })}
       connectors={connectors}
       autoConnect
     >

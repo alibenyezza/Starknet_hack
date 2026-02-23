@@ -15,13 +15,14 @@ import { useBTCPrice } from '@/hooks/useBTCPrice';
 import { FileTextIcon } from '@/components/ui/icons/FileTextIcon';
 import { HomeIcon } from '@/components/ui/icons/HomeIcon';
 import { UserIcon } from '@/components/ui/icons/UserIcon';
+import StarBorder from '@/components/ui/StarBorder';
 import clsx from 'clsx';
 
 // Import local logo files
 import cairoLogo from '@/assets/Cairo_logo_500x500.svg';
 import starknetLogo from '@/assets/SN-Stacked-Gradient - On dark bg.svg';
 import vesuLogo from '@/assets/vesu logo 1.svg';
-import starkLogo from '@/assets/logo stark.svg';
+import starkLogo from '@/assets/logo stark vf.svg';
 
 type Page = 'home' | 'vault' | 'docs' | 'team';
 
@@ -54,7 +55,7 @@ const partnerLogos = [
 
 function App() {
   const { isConnected } = useAccount();
-  const { toasts, removeToast, success, error, info, warning } = useToast();
+  const { toasts, removeToast } = useToast();
   const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
@@ -105,34 +106,43 @@ function App() {
   const headerRight = (
     <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
       {/* BTC Price */}
-      <a
-        className="sm-btc-price"
+      <StarBorder
+        as="a"
+        color="#4444cc"
+        speed="4s"
+        thickness={1}
+        className="sm-btc-price-star"
         href="https://www.coingecko.com/en/coins/bitcoin"
         target="_blank"
         rel="noopener noreferrer"
         style={{ textDecoration: 'none', cursor: 'pointer' }}
       >
-        <span className="sm-btc-label">BTC</span>
-        <span className="sm-btc-value">${price.toLocaleString()}</span>
-        <span
-          className={clsx(
-            priceChange24h >= 0 ? 'sm-btc-change-positive' : 'sm-btc-change-negative'
-          )}
-        >
-          {priceChange24h >= 0 ? '+' : ''}
-          {priceChange24h.toFixed(2)}%
+        <span style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.8rem' }}>
+          <span style={{ color: 'rgba(255,255,255,0.5)', fontWeight: 500 }}>BTC</span>
+          <span style={{ color: '#fff', fontWeight: 600 }}>${price.toLocaleString()}</span>
+          <span
+            className={clsx(
+              priceChange24h >= 0 ? 'sm-btc-change-positive' : 'sm-btc-change-negative'
+            )}
+          >
+            {priceChange24h >= 0 ? '+' : ''}
+            {priceChange24h.toFixed(2)}%
+          </span>
         </span>
-      </a>
+      </StarBorder>
       {/* Account or Connect */}
       {connected ? (
         <AccountMenu />
       ) : (
-        <button
-          className="sm-connect-btn"
+        <StarBorder
+          as="button"
+          color="#4444cc"
+          speed="4s"
+          thickness={1}
           onClick={() => setIsWalletModalOpen(true)}
         >
-          Connect Wallet
-        </button>
+          <span style={{ fontWeight: 600, fontSize: '0.85rem' }}>Connect Wallet</span>
+        </StarBorder>
       )}
     </div>
   );
@@ -166,15 +176,7 @@ function App() {
           <TeamPage onNavigateHome={() => setCurrentPage('home')} />
         ) : currentPage === 'vault' ? (
           isConnected
-            ? <VaultPage
-                onNavigateHome={() => setCurrentPage('home')}
-                onToast={(msg, type) => {
-                  if (type === 'success') success(msg);
-                  else if (type === 'error') error(msg);
-                  else if (type === 'warning') warning(msg);
-                  else info(msg);
-                }}
-              />
+            ? <VaultPage onNavigateHome={() => setCurrentPage('home')} />
             : <Hero
                 onNavigateDocs={() => setCurrentPage('docs')}
                 onNavigateVault={() => setCurrentPage('vault')}

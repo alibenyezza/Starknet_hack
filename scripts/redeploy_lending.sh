@@ -2,7 +2,7 @@
 # ============================================================
 # StarkYield - Redeploy lending layer with MockLendingAdapter
 # Replaces VesuAdapter (needs real Vesu pool) with a mock
-# that uses MockUSDC.faucet() — no Vesu pool required.
+# that uses MockUSDC.faucet() -- no Vesu pool required.
 # ============================================================
 # Run from WSL:
 #   export HOME=/home/byezz
@@ -21,7 +21,7 @@ NC='\033[0m'
 SNCAST_ACCOUNT="${SNCAST_ACCOUNT:-sepolia}"
 OWNER_ADDRESS="${OWNER_ADDRESS:-0x2b34981d2405a91eb0683fd144707d6ba9b402c7df8f9d3aaa9e359ec628653}"
 
-# Already deployed — keep these
+# Already deployed -- keep these
 WBTC_ADDRESS="${WBTC_ADDRESS:-0x066cd5e247ef08479917e46a387057706aeb57cfc5bfa27b225352b304424163}"
 USDC_ADDRESS="${USDC_ADDRESS:-0x023e418680b7210d7e3c3307a5e02f4b326201dbd6b9bf0c28e95a4cedaecfeb}"
 EKUBO_ADAPTER="${EKUBO_ADAPTER:-0x02e66ea2016f70c33b75a9dcc48e06ee3746802f0d8de2d4f2ade65cd241c342}"

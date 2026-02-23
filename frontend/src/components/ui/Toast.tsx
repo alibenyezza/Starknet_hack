@@ -9,9 +9,10 @@ interface ToastProps {
   type: ToastType;
   onClose: () => void;
   duration?: number;
+  link?: { href: string; label: string };
 }
 
-export function Toast({ message, type, onClose, duration = 5000 }: ToastProps) {
+export function Toast({ message, type, onClose, duration = 8000, link }: ToastProps) {
   useEffect(() => {
     const timer = setTimeout(onClose, duration);
     return () => clearTimeout(timer);
@@ -63,7 +64,20 @@ export function Toast({ message, type, onClose, duration = 5000 }: ToastProps) {
         <div className={iconColors[type]}>
           {icons[type]}
         </div>
-        <p className="flex-1 text-sm font-medium">{message}</p>
+        <div className="flex-1">
+          <p className="text-sm font-medium">{message}</p>
+          {link && (
+            <a
+              href={link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs underline opacity-75 hover:opacity-100"
+              style={{ wordBreak: 'break-all' }}
+            >
+              {link.label} ↗
+            </a>
+          )}
+        </div>
         <button
           onClick={onClose}
           className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -83,6 +97,7 @@ interface ToastItem {
   id: string;
   message: string;
   type: ToastType;
+  link?: { href: string; label: string };
 }
 
 interface ToastContainerProps {
@@ -103,6 +118,7 @@ export function ToastContainer({ toasts, removeToast }: ToastContainerProps) {
             message={toast.message}
             type={toast.type}
             onClose={() => removeToast(toast.id)}
+            link={toast.link}
           />
         </div>
       ))}

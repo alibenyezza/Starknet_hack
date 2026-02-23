@@ -476,11 +476,7 @@ pub mod VaultManager {
             let zero_address: ContractAddress = 0.try_into().unwrap();
 
             if lm_address == zero_address {
-                // Fallback: tracking only (for testing without LeverageManager)
-                let lp_amount = amount / 2;
-                self.btc_in_lp.write(self.btc_in_lp.read() + lp_amount);
-                let leverage_amount = amount - lp_amount;
-                self.btc_leveraged.write(self.btc_leveraged.read() + leverage_amount);
+                // No LM: BTC stays in vault. get_total_assets() captures it via vault_balance.
                 return;
             }
 
@@ -504,16 +500,7 @@ pub mod VaultManager {
             let zero_address: ContractAddress = 0.try_into().unwrap();
 
             if lm_address == zero_address {
-                // Fallback: tracking only
-                let total_in_strategy = self.btc_in_lp.read() + self.btc_leveraged.read();
-                if total_in_strategy == 0 {
-                    return;
-                }
-                let lp_ratio = Math::div_fixed(self.btc_in_lp.read(), total_in_strategy);
-                let lp_withdraw = Math::mul_fixed(amount, lp_ratio);
-                let leverage_withdraw = amount - lp_withdraw;
-                self.btc_in_lp.write(self.btc_in_lp.read() - lp_withdraw);
-                self.btc_leveraged.write(self.btc_leveraged.read() - leverage_withdraw);
+                // No LM: BTC stays in vault. _transfer_btc_to_user handles the transfer.
                 return;
             }
 

@@ -1,23 +1,24 @@
 import { useState, useEffect, useCallback } from 'react';
 
-const COINGECKO_URL =
-  'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true';
+// Binance public API — CORS-friendly, no API key, no rate limit for these endpoints
+const BINANCE_24H = 'https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT';
+const REFRESH_MS = 30_000; // 30 s — Binance is fine with this
 
 export function useBTCPrice() {
-  const [price, setPrice] = useState(97000);
+  const [price, setPrice] = useState(0);
   const [priceChange24h, setPriceChange24h] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
 
   const fetchPrice = useCallback(async () => {
     try {
       setIsLoading(true);
-      const res = await fetch(COINGECKO_URL);
-      if (!res.ok) throw new Error('Network response not ok');
+      const res = await fetch(BINANCE_24H);
+      if (!res.ok) throw new Error(`Binance ${res.status}`);
       const data = await res.json();
-      setPrice(Math.round(data.bitcoin.usd));
-      setPriceChange24h(parseFloat(data.bitcoin.usd_24h_change.toFixed(2)));
+      setPrice(Math.round(parseFloat(data.lastPrice)));
+      setPriceChange24h(parseFloat(parseFloat(data.priceChangePercent).toFixed(2)));
     } catch {
-      // CoinGecko may block browser CORS — keep fallback price silently
+      // Keep previous value silently
     } finally {
       setIsLoading(false);
     }
@@ -25,15 +26,9 @@ export function useBTCPrice() {
 
   useEffect(() => {
     fetchPrice();
-    // Refresh every 60s instead of 15s to avoid rate limits
-    const interval = setInterval(fetchPrice, 60000);
-    return () => clearInterval(interval);
+    const id = setInterval(fetchPrice, REFRESH_MS);
+    return () => clearInterval(id);
   }, [fetchPrice]);
 
-  return {
-    price,
-    priceChange24h,
-    isLoading,
-    refresh: fetchPrice,
-  };
+  return { price, priceChange24h, isLoading, refresh: fetchPrice };
 }

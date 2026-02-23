@@ -3,6 +3,10 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --font-ui: "Inter", "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+  }
+
   * {
     @apply border-gray-800;
   }
@@ -14,9 +18,7 @@
   body {
     @apply h-full text-white;
     background: radial-gradient(ellipse at 50% 0%, #0d0d2b 0%, #000000 55%);
-    font-family: "Inter", sans-serif;
-    font-optical-sizing: auto;
-    font-style: normal;
+    font-family: "Times New Roman", Times, serif;
   }
 
   #root {

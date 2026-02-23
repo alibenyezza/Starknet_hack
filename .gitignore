@@ -29,11 +29,15 @@ desktop.ini
 .idea/
 
 # Node (frontend)
+frontend/node_modules/
 node_modules/
 .next/
 dist/
 .env.local
 .env.production
+
+# Scarb build artifacts
+contracts/target/
 
 # Sncast accounts
 accounts.json

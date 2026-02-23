@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAccount, useDisconnect } from '@starknet-react/core';
 import { formatAddress } from '@/utils/format';
-import { IoChevronDown, IoWalletOutline, IoExitOutline, IoCopyOutline } from 'react-icons/io5';
+import { IoChevronDown, IoExitOutline, IoCopyOutline } from 'react-icons/io5';
+import StarBorder from '@/components/ui/StarBorder';
 
 interface AccountMenuProps {
   onDisconnect?: () => void;
@@ -51,13 +52,20 @@ export function AccountMenu({ onDisconnect }: AccountMenuProps) {
   return (
     <div className="relative" ref={menuRef}>
       {/* Trigger Button */}
-      <button
+      <StarBorder
+        as="button"
+        color="#4444cc"
+        speed="4s"
+        thickness={1}
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2 px-4 py-2 bg-primary-500 hover:bg-primary-400 text-black rounded-lg font-medium transition-all duration-200 shadow-md hover:shadow-glow"
+        style={{ cursor: 'pointer' }}
       >
-        <span>{formatAddress(address)}</span>
-        <IoChevronDown className={`w-4 h-4 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
-      </button>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontWeight: 600, fontSize: '0.85rem' }}>
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ade80', flexShrink: 0 }} />
+          {formatAddress(address)}
+          <IoChevronDown style={{ width: 14, height: 14, transition: 'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'none' }} />
+        </span>
+      </StarBorder>
 
       {/* Dropdown Menu */}
       {isOpen && (

@@ -2,7 +2,8 @@ import { useState } from 'react';
 import StarBorder from '@/components/ui/StarBorder';
 import { WalletModal } from '@/components/wallet/WalletModal';
 import FeaturesSection from './FeaturesSection';
-import DarkVeil from '@/components/ui/DarkVeil';
+import heroVideo from '@/assets/video/272517_small.mp4';
+
 
 interface HeroProps {
   onNavigateDocs?: () => void;
@@ -24,7 +25,7 @@ export function Hero({ onNavigateDocs: _onNavigateDocs, onNavigateVault, isConne
   return (
     <div className="relative min-h-screen" style={{ background: 'transparent' }}>
 
-      {/* DarkVeil background — fixed, covers full viewport */}
+      {/* Video background — fixed, covers full viewport */}
       <div
         style={{
           position: 'fixed',
@@ -36,15 +37,32 @@ export function Hero({ onNavigateDocs: _onNavigateDocs, onNavigateVault, isConne
           height: '100vh',
           zIndex: 0,
           pointerEvents: 'none',
+          overflow: 'hidden',
         }}
       >
-        <DarkVeil
-          hueShift={0}
-          noiseIntensity={0}
-          scanlineIntensity={0}
-          speed={0.5}
-          scanlineFrequency={0}
-          warpAmount={0}
+        <video
+          autoPlay
+          loop
+          muted
+          playsInline
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+          }}
+        >
+          <source src={heroVideo} type="video/mp4" />
+        </video>
+        {/* Dark overlay */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.55)',
+          }}
         />
       </div>
 
@@ -75,7 +93,7 @@ export function Hero({ onNavigateDocs: _onNavigateDocs, onNavigateVault, isConne
         >
           Earn Yield on
           <br />
-          <span className="gradient-text glow-text">Your Bitcoin</span>
+          Your Bitcoin
         </h1>
 
         {/* Subtitle */}

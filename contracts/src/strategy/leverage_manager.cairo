@@ -34,6 +34,7 @@ pub mod LeverageManager {
     use starkyield::integrations::pragma_oracle::{
         IPragmaAdapterDispatcher, IPragmaAdapterDispatcherTrait,
     };
+    use starknet::get_caller_address;
 
     #[storage]
     struct Storage {
@@ -228,6 +229,10 @@ pub mod LeverageManager {
             // Update tracking
             self.btc_in_lp.write(self.btc_in_lp.read() - lp_withdraw);
             self.btc_leveraged.write(self.btc_leveraged.read() - leverage_withdraw);
+
+            // Return recovered BTC to vault (caller)
+            IERC20Dispatcher { contract_address: self.btc_token.read() }
+                .transfer(get_caller_address(), btc_amount);
 
             self.emit(Deallocated {
                 btc_from_lp: lp_withdraw,

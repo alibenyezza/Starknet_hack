@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import './ResourcesPage.css';
+import architectureSchema from '@/assets/schéma starkyield.png';
 
 const ChevronIcon = ({ open }: { open: boolean }) => (
   <svg
@@ -13,12 +14,38 @@ const ChevronIcon = ({ open }: { open: boolean }) => (
   </svg>
 );
 
+/* ===== ARCHITECTURE DIAGRAM ===== */
+function ArchitectureFlowchart() {
+  return (
+    <div style={{ margin: '1.5rem 0' }}>
+      <div style={{
+        overflowX: 'auto',
+        padding: '1.25rem 1rem',
+        background: 'rgba(255,255,255,0.02)',
+        border: '1px solid rgba(255,255,255,0.07)',
+        borderRadius: 12,
+      }}>
+        <img
+          src={architectureSchema}
+          alt="StarkYield Architecture Schema"
+          style={{
+            width: '100%',
+            height: 'auto',
+            borderRadius: 8,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
 /* ===== DOCS DATA ===== */
 interface DocContent {
   title: string;
   body?: string;
   subsections?: { title: string; items: string[] }[];
   table?: { label: string; value: string }[];
+  diagram?: 'architecture';
 }
 
 interface DocItem {
@@ -146,6 +173,7 @@ const docsTree: DocItem[] = [
     content: {
       title: 'Architecture',
       body: 'StarkYield is built entirely on Starknet L2 using Cairo smart contracts. It integrates with Ekubo DEX, Vesu lending, and Endur staking protocols through on-chain interfaces. Pragma Oracle provides real-time BTC/USDC price feeds for IL detection and rebalancing triggers.',
+      diagram: 'architecture',
       table: [
         { label: 'Smart Contracts', value: 'Cairo 2.x on Starknet Sepolia / Mainnet' },
         { label: 'Vault Manager', value: 'IVaultManager interface — deposit, withdraw, rebalance, claimYield' },
@@ -321,6 +349,8 @@ function DocContent({ content }: { content: DocContent | undefined }) {
       <h1 className="docs-content-title">{content.title}</h1>
 
       {content.body && <p className="docs-content-body">{content.body}</p>}
+
+      {content.diagram === 'architecture' && <ArchitectureFlowchart />}
 
       {content.subsections &&
         content.subsections.map((sub, i) => (
