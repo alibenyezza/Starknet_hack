@@ -1,9 +1,19 @@
-// Contract Addresses (Testnet Sepolia) — v5 deployments (fixed fallback, no double-counting)
+// Contract Addresses (Testnet Sepolia)
+// v5 deployments: VaultManager + SyBtcToken (working deposit/withdraw with LM=0 fallback)
+// v6 deployments: Factory + LevAMM + VirtualPool + Staker + SyYbToken (new architecture)
+//   → Deploy with scripts/deploy_v6.sh, then fill in the addresses below
 export const CONTRACTS = {
+  // ── v5 (working, do not change) ──────────────────────────────────────────
   VAULT_MANAGER: '0x040489e90e3cafad2446fecb229bc06fea17f535788135469f12a15b983ef976',
   SY_BTC_TOKEN:  '0x076cb4dadb2db9a95072ecffbb67a61076e642eced3d7f37361ff6f202018be3',
   BTC_TOKEN:     '0x066cd5e247ef08479917e46a387057706aeb57cfc5bfa27b225352b304424163', // MockWBTC faucet
   USDC_TOKEN:    '0x023e418680b7210d7e3c3307a5e02f4b326201dbd6b9bf0c28e95a4cedaecfeb',
+  // ── v6 (deployed 2026-02-27 on Sepolia) ──────────────────────────────────
+  FACTORY:       '0x0253d30100bd7cbbc2bf146bdddcbb4adfc0cae0dc3d2a3ab172a1b4e21c8780',
+  LEVAMM:        '0x0623647a3e0f7f7a7aa0061a692c4e64e916dd853e0d71624da95f4076fff4af',
+  VIRTUAL_POOL:  '0x00f720c999fdedd3d4a1e393dda0ce1a4e5b0bf079a8608d61f19ba5e77a190c',
+  STAKER:        '0x04620f57ef40e7e2293ca6d06153930697bcb88d173f1634ba5cff768acec273',
+  SY_YB_TOKEN:   '0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e',
 } as const;
 
 // Network Configuration

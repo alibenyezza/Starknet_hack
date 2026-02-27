@@ -569,6 +569,62 @@ export default function VaultPage({ onNavigateHome }: VaultPageProps) {
               </button>
             </div>
 
+            {/* LEVAMM stats row — only shown when contract is deployed */}
+            {vault.levammStats.isInitialized && (
+              <div style={{
+                display: 'flex', gap: '0.75rem', marginTop: '0.4rem', fontSize: '0.7rem',
+                color: 'rgba(255,255,255,0.45)', flexWrap: 'wrap', alignItems: 'center',
+                padding: '0.4rem 0.6rem',
+                background: 'rgba(167,139,250,0.06)',
+                border: '1px solid rgba(167,139,250,0.15)',
+                borderRadius: '7px',
+              }}>
+                <span style={{ color: 'rgba(167,139,250,0.9)', fontWeight: 600, fontSize: '0.66rem', letterSpacing: '0.05em' }}>
+                  LEVAMM
+                </span>
+                <span>
+                  DTV: <b style={{ color: vault.levammStats.isOverLevered ? '#f87171' : vault.levammStats.isUnderLevered ? '#facc15' : '#4ade80' }}>
+                    {(vault.levammStats.dtv * 100).toFixed(2)}%
+                  </b>
+                </span>
+                <span>
+                  x₀: <b style={{ color: 'rgba(255,255,255,0.7)' }}>
+                    {vault.levammStats.x0.toFixed(6)} BTC
+                  </b>
+                </span>
+                <span>
+                  C: <b style={{ color: 'rgba(255,255,255,0.6)' }}>{vault.levammStats.collateralValue.toFixed(2)} USDC</b>
+                </span>
+                <span>
+                  D: <b style={{ color: 'rgba(255,255,255,0.6)' }}>{vault.levammStats.debt.toFixed(2)} USDC</b>
+                </span>
+                <span>
+                  Status: <b style={{ color: vault.levammStats.isOverLevered ? '#f87171' : vault.levammStats.isUnderLevered ? '#facc15' : '#4ade80' }}>
+                    {vault.levammStats.isOverLevered ? 'Over-levered' : vault.levammStats.isUnderLevered ? 'Under-levered' : 'Healthy'}
+                  </b>
+                </span>
+                <button
+                  onClick={async () => {
+                    info('Calling VirtualPool rebalance…');
+                    const res = await vault.virtualRebalance();
+                    if (res?.success) success('VirtualPool rebalanced!', res.txHash ? { href: `${NETWORK.EXPLORER_URL}/tx/${res.txHash}`, label: `View tx` } : undefined);
+                    else toastError(`VirtualPool: ${res?.error}`);
+                  }}
+                  disabled={!vault.levammStats.canRebalance || vault.isVirtualRebalancing}
+                  type="button"
+                  style={{
+                    marginLeft: 'auto', fontSize: '0.68rem', padding: '2px 8px',
+                    borderRadius: '4px', border: '1px solid rgba(167,139,250,0.4)',
+                    background: 'rgba(167,139,250,0.1)', color: 'rgba(200,180,255,0.85)',
+                    cursor: vault.levammStats.canRebalance ? 'pointer' : 'not-allowed',
+                    opacity: vault.levammStats.canRebalance ? 1 : 0.4,
+                  }}
+                >
+                  {vault.isVirtualRebalancing ? 'Rebalancing…' : '⚡ VirtualPool'}
+                </button>
+              </div>
+            )}
+
             <div className="vault-position-bar-container">
               <div className="vault-position-bar">
                 <div
@@ -607,6 +663,10 @@ export default function VaultPage({ onNavigateHome }: VaultPageProps) {
                   <span style={{ color: 'rgba(160,160,255,0.7)' }}>Ekubo LP</span>
                   <span>→</span>
                   <span style={{ color: 'rgba(160,160,255,0.7)' }}>Vesu</span>
+                  <span>→</span>
+                  <span style={{ color: 'rgba(167,139,250,0.9)' }}>LEVAMM</span>
+                  <span>→</span>
+                  <span style={{ color: 'rgba(200,180,255,0.8)' }}>VirtualPool</span>
                   <span>→</span>
                   <span style={{ color: '#4ade80' }}>{BTC_APY}% APY</span>
                   <span style={{ opacity: 0.4 }}>·</span>
@@ -789,6 +849,71 @@ export default function VaultPage({ onNavigateHome }: VaultPageProps) {
                 </span>
               </div>
             </div>
+
+            {/* Staker panel — only shown when STAKER contract is deployed */}
+            {CONTRACTS.STAKER !== '0x' + '0'.repeat(63) && (
+              <div style={{
+                marginTop: '1rem',
+                padding: '0.85rem 1rem',
+                background: 'rgba(255,255,255,0.02)',
+                border: '1px solid rgba(255,255,255,0.07)',
+                borderRadius: '12px',
+              }}>
+                <div style={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.7)', fontWeight: 600, marginBottom: '0.5rem' }}>
+                  Stake syBTC → Earn syYB
+                </div>
+                <div style={{ display: 'flex', gap: '1rem', fontSize: '0.7rem', color: 'rgba(255,255,255,0.45)', flexWrap: 'wrap', marginBottom: '0.6rem' }}>
+                  <span>Total staked: <b style={{ color: 'rgba(255,255,255,0.7)' }}>{vault.stakerStats.totalStaked.toFixed(4)} syBTC</b></span>
+                  <span>Your staked: <b style={{ color: 'rgba(255,255,255,0.7)' }}>{vault.stakerStats.userStaked.toFixed(4)} syBTC</b></span>
+                  <span>Pending: <b style={{ color: '#4ade80' }}>{vault.stakerStats.pendingRewards.toFixed(6)} syYB</b></span>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <button
+                    onClick={async () => {
+                      const amt = vault.userShares === 0n ? 0 : Number(vault.userShares) / 1e18;
+                      if (amt <= 0) return;
+                      info('Staking syBTC…');
+                      const res = await vault.stakeShares(amt);
+                      if (res?.success) success('Staked!', res.txHash ? { href: `${NETWORK.EXPLORER_URL}/tx/${res.txHash}`, label: 'View tx' } : undefined);
+                      else toastError(`Stake: ${res?.error}`);
+                    }}
+                    disabled={vault.userShares === 0n || vault.isStaking}
+                    type="button"
+                    style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(74,222,128,0.3)', background: 'rgba(74,222,128,0.08)', color: '#4ade80', cursor: 'pointer', opacity: vault.userShares === 0n ? 0.4 : 1 }}
+                  >
+                    {vault.isStaking ? 'Staking…' : 'Stake All syBTC'}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const amt = vault.stakerStats.userStaked;
+                      if (amt <= 0) return;
+                      info('Unstaking syBTC…');
+                      const res = await vault.unstakeShares(amt);
+                      if (res?.success) success('Unstaked!', res.txHash ? { href: `${NETWORK.EXPLORER_URL}/tx/${res.txHash}`, label: 'View tx' } : undefined);
+                      else toastError(`Unstake: ${res?.error}`);
+                    }}
+                    disabled={vault.stakerStats.userStaked === 0 || vault.isUnstaking}
+                    type="button"
+                    style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(248,113,113,0.3)', background: 'rgba(248,113,113,0.08)', color: '#f87171', cursor: 'pointer', opacity: vault.stakerStats.userStaked === 0 ? 0.4 : 1 }}
+                  >
+                    {vault.isUnstaking ? 'Unstaking…' : 'Unstake'}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      info('Claiming syYB rewards…');
+                      const res = await vault.claimRewards();
+                      if (res?.success) success('Rewards claimed!', res.txHash ? { href: `${NETWORK.EXPLORER_URL}/tx/${res.txHash}`, label: 'View tx' } : undefined);
+                      else toastError(`Claim: ${res?.error}`);
+                    }}
+                    disabled={vault.stakerStats.pendingRewards === 0 || vault.isClaimingRewards}
+                    type="button"
+                    style={{ fontSize: '0.7rem', padding: '4px 10px', borderRadius: '6px', border: '1px solid rgba(250,204,21,0.3)', background: 'rgba(250,204,21,0.08)', color: '#facc15', cursor: 'pointer', opacity: vault.stakerStats.pendingRewards === 0 ? 0.4 : 1 }}
+                  >
+                    {vault.isClaimingRewards ? 'Claiming…' : `Claim ${vault.stakerStats.pendingRewards > 0 ? vault.stakerStats.pendingRewards.toFixed(4) : ''} syYB`}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

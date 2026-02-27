@@ -10,6 +10,12 @@ import { useAccount } from '@starknet-react/core';
 import { RpcProvider, Contract, uint256 } from 'starknet';
 import { CONTRACTS, APP_CONFIG } from '@/config/constants';
 
+// ── Utility: detect undeployed placeholder address ────────────────────────
+const ZERO_ADDR = '0x' + '0'.repeat(63);
+function isDeployed(addr: string): boolean {
+  return addr !== ZERO_ADDR && addr !== '0x0';
+}
+
 // ── ABIs (minimal — only what we call) ────────────────────────────────────
 
 const ERC20_ABI = [
@@ -42,6 +48,67 @@ const VAULT_ABI = [
     outputs: [{ type: 'core::integer::u256' }],
     state_mutability: 'view',
   },
+] as const;
+
+const LEVAMM_ABI = [
+  { type: 'function', name: 'get_x0',            inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
+  { type: 'function', name: 'get_dtv',           inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
+  { type: 'function', name: 'is_over_levered',   inputs: [], outputs: [{ type: 'core::bool' }],         state_mutability: 'view' },
+  { type: 'function', name: 'is_under_levered',  inputs: [], outputs: [{ type: 'core::bool' }],         state_mutability: 'view' },
+  { type: 'function', name: 'is_active',         inputs: [], outputs: [{ type: 'core::bool' }],         state_mutability: 'view' },
+  { type: 'function', name: 'get_collateral_value', inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
+  { type: 'function', name: 'get_debt',          inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
+  { type: 'function', name: 'get_current_btc_price', inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
+  {
+    type: 'function', name: 'get_price',
+    inputs: [{ name: 'btc_amount', type: 'core::integer::u256' }],
+    outputs: [{ type: 'core::integer::u256' }],
+    state_mutability: 'view',
+  },
+  {
+    type: 'function', name: 'swap',
+    inputs: [{ name: 'direction', type: 'core::bool' }, { name: 'btc_amount', type: 'core::integer::u256' }],
+    outputs: [{ type: 'core::integer::u256' }],
+    state_mutability: 'external',
+  },
+  { type: 'function', name: 'accrue_interest', inputs: [], outputs: [], state_mutability: 'external' },
+] as const;
+
+const VIRTUAL_POOL_ABI = [
+  { type: 'function', name: 'can_rebalance',              inputs: [], outputs: [{ type: 'core::bool' }],         state_mutability: 'view' },
+  { type: 'function', name: 'get_imbalance_direction',    inputs: [], outputs: [{ type: 'core::bool' }],         state_mutability: 'view' },
+  { type: 'function', name: 'get_total_profit_distributed', inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
+  { type: 'function', name: 'get_last_rebalance_block',   inputs: [], outputs: [{ type: 'core::integer::u64' }], state_mutability: 'view' },
+  { type: 'function', name: 'rebalance',                  inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'external' },
+] as const;
+
+const STAKER_ABI = [
+  { type: 'function', name: 'get_total_staked',       inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
+  {
+    type: 'function', name: 'get_staked_balance',
+    inputs: [{ name: 'user', type: 'core::starknet::contract_address::ContractAddress' }],
+    outputs: [{ type: 'core::integer::u256' }],
+    state_mutability: 'view',
+  },
+  {
+    type: 'function', name: 'pending_rewards',
+    inputs: [{ name: 'user', type: 'core::starknet::contract_address::ContractAddress' }],
+    outputs: [{ type: 'core::integer::u256' }],
+    state_mutability: 'view',
+  },
+  {
+    type: 'function', name: 'stake',
+    inputs: [{ name: 'sy_btc_amount', type: 'core::integer::u256' }],
+    outputs: [],
+    state_mutability: 'external',
+  },
+  {
+    type: 'function', name: 'unstake',
+    inputs: [{ name: 'sy_btc_amount', type: 'core::integer::u256' }],
+    outputs: [],
+    state_mutability: 'external',
+  },
+  { type: 'function', name: 'claim_rewards', inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'external' },
 ] as const;
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -95,13 +162,16 @@ export interface VaultStats {
 export function useVaultManager() {
   const { account, address } = useAccount();
 
-  // /rpc is proxied by Vite to Cartridge — same origin, no CORS
-  // blockIdentifier: 'latest' because Cartridge RPC doesn't support 'pending'
-  const rpc = useMemo(() => new RpcProvider({ nodeUrl: '/rpc', blockIdentifier: 'latest' }), []);
+  // Use direct RPC URL so it works both in dev and on Vercel production.
+  // In dev, Vite also proxies /rpc, but the direct URL avoids that dependency.
+  const rpc = useMemo(() => new RpcProvider({ nodeUrl: 'https://api.cartridge.gg/x/starknet/sepolia', blockIdentifier: 'latest' }), []);
 
   // Contract instances
-  const btcContract   = useMemo(() => new Contract(ERC20_ABI as any, CONTRACTS.BTC_TOKEN,     rpc), [rpc]);
-  const vaultContract = useMemo(() => new Contract(VAULT_ABI as any, CONTRACTS.VAULT_MANAGER, rpc), [rpc]);
+  const btcContract         = useMemo(() => new Contract(ERC20_ABI       as any, CONTRACTS.BTC_TOKEN,     rpc), [rpc]);
+  const vaultContract       = useMemo(() => new Contract(VAULT_ABI       as any, CONTRACTS.VAULT_MANAGER, rpc), [rpc]);
+  const levammContract      = useMemo(() => new Contract(LEVAMM_ABI      as any, CONTRACTS.LEVAMM,        rpc), [rpc]);
+  const virtualPoolContract = useMemo(() => new Contract(VIRTUAL_POOL_ABI as any, CONTRACTS.VIRTUAL_POOL,  rpc), [rpc]);
+  const stakerContract      = useMemo(() => new Contract(STAKER_ABI      as any, CONTRACTS.STAKER,        rpc), [rpc]);
 
   // ── state ──────────────────────────────────────────────────────────────
   const [wbtcBalance,    setWbtcBalance]    = useState(0);
@@ -117,6 +187,29 @@ export function useVaultManager() {
   const [isWithdrawing,  setIsWithdrawing]  = useState(false);
   const [isFauceting,    setIsFauceting]    = useState(false);
   const [isRebalancing,  setIsRebalancing]  = useState(false);
+
+  // ── LEVAMM / VirtualPool / Staker state ───────────────────────────────
+  const [levammStats, setLevammStats] = useState({
+    dtv: 0,
+    x0: 0,
+    collateralValue: 0,
+    debt: 0,
+    isOverLevered: false,
+    isUnderLevered: false,
+    isInitialized: false,
+    canRebalance: false,
+    totalProfit: 0,
+  });
+  const [stakerStats, setStakerStats] = useState({
+    totalStaked: 0,
+    userStaked: 0,
+    pendingRewards: 0,
+  });
+  const [isSwapping,            setIsSwapping]            = useState(false);
+  const [isVirtualRebalancing,  setIsVirtualRebalancing]  = useState(false);
+  const [isStaking,             setIsStaking]             = useState(false);
+  const [isUnstaking,           setIsUnstaking]           = useState(false);
+  const [isClaimingRewards,     setIsClaimingRewards]     = useState(false);
 
   // ── refresh ────────────────────────────────────────────────────────────
 
@@ -165,8 +258,61 @@ export function useVaultManager() {
       }
     }
 
+    // ── LEVAMM + VirtualPool stats — only if deployed ──
+    if (isDeployed(CONTRACTS.LEVAMM)) {
+      try {
+        const [dtv, x0, overLevered, underLevered, active, collateral, debt] = await Promise.all([
+          levammContract.get_dtv(),
+          levammContract.get_x0(),
+          levammContract.is_over_levered(),
+          levammContract.is_under_levered(),
+          levammContract.is_active(),
+          levammContract.get_collateral_value(),
+          levammContract.get_debt(),
+        ]);
+        const [canRebal, totalProfit] = await Promise.all([
+          virtualPoolContract.can_rebalance(),
+          virtualPoolContract.get_total_profit_distributed(),
+        ]);
+        setLevammStats({
+          dtv:             fromWei(dtv),
+          x0:              fromWei(x0),
+          collateralValue: fromWei(collateral),
+          debt:            fromWei(debt),
+          isOverLevered:   Boolean(overLevered),
+          isUnderLevered:  Boolean(underLevered),
+          isInitialized:   Boolean(active),
+          canRebalance:    Boolean(canRebal),
+          totalProfit:     fromWei(totalProfit),
+        });
+      } catch (err) {
+        console.error('[useVaultManager] levamm stats error:', err);
+      }
+    }
+
+    // ── Staker stats — only if deployed + user connected ──
+    if (isDeployed(CONTRACTS.STAKER)) {
+      try {
+        const total = await stakerContract.get_total_staked();
+        setStakerStats(prev => ({ ...prev, totalStaked: fromWei(total) }));
+        if (address) {
+          const [userStaked, pending] = await Promise.all([
+            stakerContract.get_staked_balance(address),
+            stakerContract.pending_rewards(address),
+          ]);
+          setStakerStats({
+            totalStaked:    fromWei(total),
+            userStaked:     fromWei(userStaked),
+            pendingRewards: fromWei(pending),
+          });
+        }
+      } catch (err) {
+        console.error('[useVaultManager] staker stats error:', err);
+      }
+    }
+
     setIsLoading(false);
-  }, [address, btcContract, vaultContract]);
+  }, [address, btcContract, vaultContract, levammContract, virtualPoolContract, stakerContract]);
 
   useEffect(() => {
     refresh();
@@ -186,7 +332,8 @@ export function useVaultManager() {
         entrypoint: 'faucet',
         calldata: [low, high],
       }]);
-      setTimeout(refresh, 4000); // give the tx a moment to land
+      setTimeout(refresh, 5000);  // first refresh ~5s after tx
+      setTimeout(refresh, 12000); // second refresh ~12s (Starknet can be slow)
       return { success: true, txHash: tx.transaction_hash };
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -282,7 +429,121 @@ export function useVaultManager() {
     }
   }, [account, refresh]);
 
+  // ── LEVAMM swap ────────────────────────────────────────────────────────
+  const levammSwap = useCallback(async (
+    direction: boolean,
+    btcAmount: number,
+  ): Promise<{ success: boolean; txHash?: string; error?: string }> => {
+    if (!account) return { success: false, error: 'Wallet not connected' };
+    setIsSwapping(true);
+    try {
+      const [low, high] = u256Calldata(toWei(btcAmount));
+      const tx = await account.execute([{
+        contractAddress: CONTRACTS.LEVAMM,
+        entrypoint: 'swap',
+        calldata: [direction ? '1' : '0', low, high],
+      }]);
+      setTimeout(refresh, 4000);
+      return { success: true, txHash: tx.transaction_hash };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[useVaultManager] levamm swap error:', msg);
+      return { success: false, error: msg };
+    } finally {
+      setIsSwapping(false);
+    }
+  }, [account, refresh]);
+
+  // ── VirtualPool rebalance ───────────────────────────────────────────────
+  const virtualRebalance = useCallback(async (): Promise<{ success: boolean; txHash?: string; error?: string }> => {
+    if (!account) return { success: false, error: 'Wallet not connected' };
+    setIsVirtualRebalancing(true);
+    try {
+      const tx = await account.execute([{
+        contractAddress: CONTRACTS.VIRTUAL_POOL,
+        entrypoint: 'rebalance',
+        calldata: [],
+      }]);
+      setTimeout(refresh, 4000);
+      return { success: true, txHash: tx.transaction_hash };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[useVaultManager] virtualRebalance error:', msg);
+      return { success: false, error: msg };
+    } finally {
+      setIsVirtualRebalancing(false);
+    }
+  }, [account, refresh]);
+
+  // ── Staker actions ─────────────────────────────────────────────────────
+  const stakeShares = useCallback(async (
+    amount: number,
+  ): Promise<{ success: boolean; txHash?: string; error?: string }> => {
+    if (!account) return { success: false, error: 'Wallet not connected' };
+    setIsStaking(true);
+    try {
+      const [low, high] = u256Calldata(toWei(amount));
+      const tx = await account.execute([
+        // Approve Staker to pull syBTC
+        { contractAddress: CONTRACTS.SY_BTC_TOKEN, entrypoint: 'approve', calldata: [CONTRACTS.STAKER, low, high] },
+        { contractAddress: CONTRACTS.STAKER,       entrypoint: 'stake',   calldata: [low, high] },
+      ]);
+      setTimeout(refresh, 4000);
+      return { success: true, txHash: tx.transaction_hash };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[useVaultManager] stakeShares error:', msg);
+      return { success: false, error: msg };
+    } finally {
+      setIsStaking(false);
+    }
+  }, [account, refresh]);
+
+  const unstakeShares = useCallback(async (
+    amount: number,
+  ): Promise<{ success: boolean; txHash?: string; error?: string }> => {
+    if (!account) return { success: false, error: 'Wallet not connected' };
+    setIsUnstaking(true);
+    try {
+      const [low, high] = u256Calldata(toWei(amount));
+      const tx = await account.execute([{
+        contractAddress: CONTRACTS.STAKER,
+        entrypoint: 'unstake',
+        calldata: [low, high],
+      }]);
+      setTimeout(refresh, 4000);
+      return { success: true, txHash: tx.transaction_hash };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[useVaultManager] unstakeShares error:', msg);
+      return { success: false, error: msg };
+    } finally {
+      setIsUnstaking(false);
+    }
+  }, [account, refresh]);
+
+  const claimRewards = useCallback(async (): Promise<{ success: boolean; txHash?: string; error?: string }> => {
+    if (!account) return { success: false, error: 'Wallet not connected' };
+    setIsClaimingRewards(true);
+    try {
+      const tx = await account.execute([{
+        contractAddress: CONTRACTS.STAKER,
+        entrypoint: 'claim_rewards',
+        calldata: [],
+      }]);
+      setTimeout(refresh, 4000);
+      return { success: true, txHash: tx.transaction_hash };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[useVaultManager] claimRewards error:', msg);
+      return { success: false, error: msg };
+    } finally {
+      setIsClaimingRewards(false);
+    }
+  }, [account, refresh]);
+
   return {
+    // ── existing ──────────────────────────────────────────────────────────
     wbtcBalance,
     userDepositBTC,
     userShares,
@@ -297,5 +558,18 @@ export function useVaultManager() {
     faucet,
     rebalance,
     refresh,
+    // ── new: LEVAMM / VirtualPool / Staker ──────────────────────────────
+    levammStats,
+    stakerStats,
+    isSwapping,
+    isVirtualRebalancing,
+    isStaking,
+    isUnstaking,
+    isClaimingRewards,
+    levammSwap,
+    virtualRebalance,
+    stakeShares,
+    unstakeShares,
+    claimRewards,
   };
 }

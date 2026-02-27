@@ -48,5 +48,8 @@ contracts/accounts.json
 .env.*
 !.env.example
 
+# Vercel
+.vercel
+
 # Misc
 *.log
