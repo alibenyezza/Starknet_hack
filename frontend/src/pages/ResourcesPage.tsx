@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import './ResourcesPage.css';
-import architectureSchema from '@/assets/schéma starkyield.png';
 
 const ChevronIcon = ({ open }: { open: boolean }) => (
   <svg
@@ -14,38 +13,12 @@ const ChevronIcon = ({ open }: { open: boolean }) => (
   </svg>
 );
 
-/* ===== ARCHITECTURE DIAGRAM ===== */
-function ArchitectureFlowchart() {
-  return (
-    <div style={{ margin: '1.5rem 0' }}>
-      <div style={{
-        overflowX: 'auto',
-        padding: '1.25rem 1rem',
-        background: 'rgba(255,255,255,0.02)',
-        border: '1px solid rgba(255,255,255,0.07)',
-        borderRadius: 12,
-      }}>
-        <img
-          src={architectureSchema}
-          alt="StarkYield Architecture Schema"
-          style={{
-            width: '100%',
-            height: 'auto',
-            borderRadius: 8,
-          }}
-        />
-      </div>
-    </div>
-  );
-}
-
 /* ===== DOCS DATA ===== */
 interface DocContent {
   title: string;
   body?: string;
   subsections?: { title: string; items: string[] }[];
   table?: { label: string; value: string }[];
-  diagram?: 'architecture';
 }
 
 interface DocItem {
@@ -63,7 +36,7 @@ const docsTree: DocItem[] = [
     category: 'Protocol',
     content: {
       title: 'Getting Started',
-      body: 'StarkYield is an IL-free Bitcoin liquidity protocol on Starknet L2. It allows users to deposit BTC (via wBTC) and automatically deploy it across multiple yield strategies — Ekubo DEX, Vesu lending, and Endur staking — using dynamic leverage rebalancing to eliminate impermanent loss and maximize returns.',
+      body: 'StarkYield is an IL-free Bitcoin liquidity protocol on Starknet L2. It allows users to deposit BTC (via wBTC) and automatically deploy it across multiple yield strategies (Ekubo DEX, Vesu lending, and Endur staking) using dynamic leverage rebalancing to eliminate impermanent loss and maximize returns.',
       subsections: [
         {
           title: 'Prerequisites',
@@ -87,13 +60,13 @@ const docsTree: DocItem[] = [
         label: '1. Connect Wallet',
         content: {
           title: 'Connect Your Starknet Wallet',
-          body: 'Connect your ArgentX or Braavos wallet to StarkYield. The protocol operates entirely on Starknet L2, giving you 50–100x lower gas fees compared to Ethereum mainnet.',
+          body: 'Connect your ArgentX or Braavos wallet to StarkYield. The protocol operates entirely on Starknet L2, giving you 50 to 100x lower gas fees compared to Ethereum mainnet.',
           subsections: [
             {
               title: 'Supported Wallets',
               items: [
-                'ArgentX — Most popular Starknet wallet, available as browser extension',
-                'Braavos — Security-focused Starknet wallet with hardware signer support',
+                'ArgentX is the most popular Starknet wallet, available as a browser extension',
+                'Braavos is a security-focused Starknet wallet with hardware signer support',
               ],
             },
           ],
@@ -129,9 +102,9 @@ const docsTree: DocItem[] = [
             {
               title: 'Strategy Allocation',
               items: [
-                'Ekubo DEX (35%) — Provide liquidity to BTC/USDC concentrated pools; IL mitigated via leverage rebalancing',
-                'Vesu Lending (40%) — Lend wBTC to earn interest from borrowers; lowest risk, stable APY',
-                'Endur Staking (25%) — Stake into liquid staking derivatives; earns staking rewards + DeFi yield',
+                'Ekubo DEX (35%): provides liquidity to BTC/USDC concentrated pools. IL is mitigated via leverage rebalancing',
+                'Vesu Lending (40%): lends wBTC to earn interest from borrowers. Lowest risk, stable APY',
+                'Endur Staking (25%): stakes into liquid staking derivatives. Earns staking rewards + DeFi yield',
               ],
             },
             {
@@ -155,7 +128,7 @@ const docsTree: DocItem[] = [
             {
               title: 'Withdrawal Details',
               items: [
-                'No lock-up period — withdraw at any time',
+                'No lock-up period. Withdraw at any time',
                 'Minimum withdrawal: 0.001 BTC',
                 'Share redemption at current share price (principal + yield)',
                 'Gas fees paid in ETH on Starknet',
@@ -173,14 +146,13 @@ const docsTree: DocItem[] = [
     content: {
       title: 'Architecture',
       body: 'StarkYield is built entirely on Starknet L2 using Cairo smart contracts. It integrates with Ekubo DEX, Vesu lending, and Endur staking protocols through on-chain interfaces. Pragma Oracle provides real-time BTC/USDC price feeds for IL detection and rebalancing triggers.',
-      diagram: 'architecture',
       table: [
         { label: 'Smart Contracts', value: 'Cairo 2.x on Starknet Sepolia / Mainnet' },
-        { label: 'Vault Manager', value: 'IVaultManager interface — deposit, withdraw, rebalance, claimYield' },
-        { label: 'Oracle', value: 'Pragma Oracle — BTC/USD price feed for rebalancing triggers' },
-        { label: 'DEX Integration', value: 'Ekubo DEX — concentrated liquidity BTC/USDC pools' },
-        { label: 'Lending Integration', value: 'Vesu Protocol — wBTC lending markets' },
-        { label: 'Staking Integration', value: 'Endur — liquid BTC staking derivatives' },
+        { label: 'Vault Manager', value: 'IVaultManager interface: deposit, withdraw, rebalance, claimYield' },
+        { label: 'Oracle', value: 'Pragma Oracle provides BTC/USD price feed for rebalancing triggers' },
+        { label: 'DEX Integration', value: 'Ekubo DEX with concentrated liquidity BTC/USDC pools' },
+        { label: 'Lending Integration', value: 'Vesu Protocol for wBTC lending markets' },
+        { label: 'Staking Integration', value: 'Endur for liquid BTC staking derivatives' },
         { label: 'Frontend', value: 'React 18, Vite, @starknet-react/core, Tailwind CSS' },
         { label: 'Explorer', value: 'Starkscan (sepolia.starkscan.co / starkscan.co)' },
       ],
@@ -217,7 +189,7 @@ const docsTree: DocItem[] = [
         { label: 'wBTC Token', value: 'Starknet Sepolia wBTC contract address' },
         { label: 'Ekubo Pool', value: 'BTC/USDC concentrated liquidity pool on Ekubo' },
         { label: 'Vesu Market', value: 'wBTC lending market on Vesu' },
-        { label: 'Pragma Oracle', value: 'BTC/USD feed — 0x4254432f555344 (key)' },
+        { label: 'Pragma Oracle', value: 'BTC/USD feed, key: 0x4254432f555344' },
         { label: 'Block Explorer', value: 'sepolia.starkscan.co' },
         { label: 'Testnet Faucet', value: 'faucet.starknet.io (request STRK / ETH)' },
       ],
@@ -232,9 +204,9 @@ const docsTree: DocItem[] = [
       body: 'The Health Factor measures the safety of your leveraged position in the Ekubo DEX strategy. It is defined as collateral value divided by debt value. A Health Factor below 1.0 means your position is at risk of liquidation.',
       table: [
         { label: 'Safe (≥ 2.0)', value: 'Position is well-collateralized. No action needed.' },
-        { label: 'Moderate (1.5–2.0)', value: 'Position is healthy but monitor market conditions.' },
-        { label: 'Warning (1.2–1.5)', value: 'Consider reducing leverage or adding collateral.' },
-        { label: 'Danger (1.0–1.2)', value: 'High risk of liquidation. Immediate action recommended.' },
+        { label: 'Moderate (1.5 to 2.0)', value: 'Position is healthy but monitor market conditions.' },
+        { label: 'Warning (1.2 to 1.5)', value: 'Consider reducing leverage or adding collateral.' },
+        { label: 'Danger (1.0 to 1.2)', value: 'High risk of liquidation. Immediate action recommended.' },
         { label: 'Liquidation (< 1.0)', value: 'Position will be automatically liquidated to protect the vault.' },
       ],
     },
@@ -249,7 +221,7 @@ const docsTree: DocItem[] = [
         {
           title: 'Risks & Warnings',
           items: [
-            'Starknet Sepolia is a testnet — contracts and funds have no real value.',
+            'Starknet Sepolia is a testnet. Contracts and funds have no real value.',
             'Smart contracts are unaudited. Do not deposit significant mainnet funds.',
             'The Ekubo liquidity strategy carries residual impermanent loss risk during extreme market moves.',
             'Vesu lending positions can be liquidated if the BTC/USDC price drops sharply.',
@@ -262,7 +234,7 @@ const docsTree: DocItem[] = [
           items: [
             'wBTC uses 8 decimals on Starknet. 0.001 BTC = 100,000 in raw units.',
             'USDC uses 6 decimals. Always confirm token decimals before crafting calldata.',
-            'Starknet transactions use felt252 for addresses — verify checksum format.',
+            'Starknet transactions use felt252 for addresses. Verify checksum format.',
             'Gas costs are paid in ETH on Starknet (not STRK on Sepolia).',
             'The Pragma Oracle BTC/USD feed key is 0x4254432f555344 (hex-encoded "BTC/USD").',
           ],
@@ -350,8 +322,6 @@ function DocContent({ content }: { content: DocContent | undefined }) {
 
       {content.body && <p className="docs-content-body">{content.body}</p>}
 
-      {content.diagram === 'architecture' && <ArchitectureFlowchart />}
-
       {content.subsections &&
         content.subsections.map((sub, i) => (
           <div key={i} className="docs-subsection">
@@ -399,7 +369,7 @@ interface ResourcesPageProps {
   onNavigateHome?: () => void;
 }
 
-export default function ResourcesPage({ onNavigateHome }: ResourcesPageProps) {
+export default function ResourcesPage({ onNavigateHome: _onNavigateHome }: ResourcesPageProps) {
   const [activeId, setActiveId] = useState('getting-started');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const content = findContent(docsTree, activeId);
