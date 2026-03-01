@@ -1,162 +1,166 @@
-# StarkYield - IL-Free BTC Liquidity Protocol on Starknet
+# StarkYield — IL-Free BTC Leveraged Liquidity on Starknet
 
-StarkYield is a DeFi protocol that eliminates Impermanent Loss for BTC liquidity providers on Starknet. It uses dynamic leverage rebalancing to compensate IL with amplified trading gains.
+StarkYield is an IL-free BTC yield protocol on Starknet. Users deposit wBTC and receive **syBTC** (a yield-bearing receipt token). The protocol automatically deploys the BTC into an Ekubo LP + Vesu leveraged position at **2× leverage**, which mathematically eliminates impermanent loss.
 
-## How It Works
+**Live on Starknet Sepolia testnet.**
 
-Users deposit BTC into the vault and receive syBTC receipt tokens. The vault splits deposits 50/50:
+---
 
-- **50% into Ekubo LP** (BTC/USDC pool) — earns trading fees
-- **50% into Vesu leverage** — deposits BTC as collateral, borrows USDC, buys more BTC
+## Why 2× Leverage Eliminates IL
 
-When BTC price moves, the LP position suffers Impermanent Loss, but the leveraged position generates amplified gains that compensate the IL.
+In a standard AMM, LP value grows as √p (square root of price). With 2× leverage applied to the LP:
 
 ```
-IL Formula: IL = 1 - 2*sqrt(r) / (1+r)
-
-BTC +50% → IL = ~2%, Leverage gain (2x) = ~4% → Net = +2%
+V(p) ∝ (√p)^L = (√p)^2 = p
 ```
 
-A permissionless `rebalance()` function keeps the leverage ratio at target (2x default) by adjusting positions when deviation exceeds 10%.
+The position scales **linearly** with BTC price — identical to just holding BTC — so there is zero impermanent loss.
+
+---
 
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────┐
-│                  VAULT LAYER                      │
-│  VaultManager ─── deposit/withdraw/rebalance      │
-│  SyBtcToken   ─── ERC20 receipt token (syBTC)     │
-└──────────────────────┬───────────────────────────┘
-                       │
-┌──────────────────────▼───────────────────────────┐
-│                STRATEGY LAYER                     │
-│  ILEliminator    ─── IL math + optimal leverage   │
-│  LeverageManager ─── allocate/deallocate/adjust   │
-└──────────────────────┬───────────────────────────┘
-                       │
-┌──────────────────────▼───────────────────────────┐
-│              RISK MANAGEMENT                      │
-│  RiskManager ─── health factor, deleverage,       │
-│                  price sanity, withdrawal limits   │
-└──────────────────────┬───────────────────────────┘
-                       │
-┌──────────────────────▼───────────────────────────┐
-│             INTEGRATION LAYER                     │
-│  PragmaAdapter ─── BTC/USD price oracle           │
-│  EkuboAdapter  ─── DEX swaps + LP positions       │
-│  VesuAdapter   ─── lending/borrowing              │
-└──────────────────────────────────────────────────┘
+wBTC deposit
+    │
+    ▼
+VaultManager ──────────────────────────────────────────────────────────
+    │ mints syBTC shares                                               │
+    │                                                                  │
+    ▼                                                                  │
+LeverageManager (allocate)                                             │
+    ├── MockEkuboAdapter ──→ Ekubo BTC/USDC LP                         │
+    └── MockVesuAdapter  ──→ Vesu CDP (borrow USDC against LP)         │
+                                                                       │
+LEVAMM (Constant Leverage AMM)  ←── VirtualPool (arbitrage rebalance) │
+    ├── x0 bonding curve (LEV_RATIO = 4/9)                            │
+    ├── DTV safety bands [6.25%, 53.125%]                              │
+    └── Interest accrual + refueling                                   │
+                                                                       │
+Factory (market registry) ─────────────────────────────────────────────
+    └── registers markets, blueprint class hashes, debt ceilings
+
+Staker
+    ├── stake syBTC → earn syYB emissions (MasterChef)
+    └── unstake / claim_rewards
+
+Governance (stubs)
+    ├── syYB token (ERC-20)
+    ├── VotingEscrow (lock syYB → vesyYB voting power)
+    ├── GaugeController (vote on emission weights)
+    └── LiquidityGauge (emission distribution)
 ```
 
-## Project Structure
+---
+
+## Repository Structure
 
 ```
-contracts/src/
-├── lib.cairo                          # Module root
-├── vault/
-│   ├── vault_manager.cairo            # Main contract: deposit, withdraw, rebalance
-│   └── sy_btc_token.cairo             # ERC20 receipt token
-├── strategy/
-│   ├── il_eliminator.cairo            # IL calculation engine
-│   └── leverage_manager.cairo         # Strategy execution (Ekubo + Vesu)
-├── risk/
-│   └── risk_manager.cairo             # Health factor, limits, price checks
-├── integrations/
-│   ├── ierc20.cairo                   # ERC20 interface
-│   ├── pragma_oracle.cairo            # Pragma price feed adapter
-│   ├── ekubo.cairo                    # Ekubo DEX adapter
-│   └── vesu.cairo                     # Vesu lending adapter
-└── utils/
-    ├── constants.cairo                # Protocol parameters
-    └── math.cairo                     # Fixed-point arithmetic (sqrt, mul, div)
-
-contracts/tests/
-├── test_sy_btc_token.cairo            # 5 tests
-├── test_vault_manager.cairo           # 10 tests
-├── test_il_eliminator.cairo           # 12 tests
-├── test_risk_manager.cairo            # 16 tests
-└── test_math.cairo                    # 14 tests
+Starknet_hack/
+├── contracts/
+│   └── src/
+│       ├── vault/          VaultManager, SyBtcToken, MockWBTC, MockUSDC
+│       ├── strategy/       LeverageManager, ILEliminator
+│       ├── risk/           RiskManager
+│       ├── integrations/   Ekubo, Vesu, Pragma adapters + mocks
+│       ├── amm/            levamm.cairo   ← LEVAMM (2× bonding curve)
+│       ├── pool/           virtual_pool.cairo ← Flash-loan rebalancer
+│       ├── factory/        factory.cairo  ← Market registry
+│       ├── staker/         staker.cairo   ← syBTC staking → syYB
+│       ├── governance/     sy_yb_token, voting_escrow, gauge_controller, liquidity_gauge
+│       └── utils/          constants.cairo, math.cairo
+├── frontend/
+│   └── src/
+│       ├── hooks/          useVaultManager (deposit/withdraw/LEVAMM/Staker)
+│       ├── pages/          VaultPage (full UI)
+│       └── config/         constants.ts (contract addresses)
+└── scripts/                Deploy/redeploy scripts
 ```
 
-## What's Implemented
+---
 
-### Vault (100%)
-- `deposit()` — transfer BTC, mint syBTC, allocate to strategy
-- `withdraw()` — burn syBTC, deallocate, transfer BTC back
-- `rebalance()` — permissionless keeper function, adjusts leverage to target
-- `emergency_withdraw()` — admin closes all positions, pauses vault
-- View functions: total assets, share price, health factor, leverage ratio, BTC price
+## Deployed Contracts — Sepolia
 
-### IL Eliminator (100%)
-- `calculate_il()` — exact IL formula with fixed-point sqrt
-- `calculate_leverage_pnl()` — leveraged position P&L
-- `calculate_optimal_leverage()` — volatility-based optimal leverage (clamped 1.5x-3x)
-- `calculate_net_position()` — net result after IL and leverage gains
-
-### Leverage Manager (100%)
-- `allocate()` — split 50/50 between Ekubo LP and Vesu leverage
-- `deallocate()` — proportional withdrawal, repay debt first
-- `increase_leverage()` / `reduce_leverage()` — adjust positions
-- `close_all_positions()` — emergency unwinding
-
-### Risk Manager (100%)
-- Health factor classification (Safe > 2.0, Moderate > 1.5, Warning > 1.2, Danger)
-- Deleverage amount calculation
-- Price sanity checks (max 10% deviation)
-- Daily withdrawal limits with reset
-
-### Integration Adapters (100%)
-- Pragma Oracle — BTC/USD price with staleness check, decimal normalization
-- Ekubo DEX — swap BTC/USDC, add/remove liquidity
-- Vesu Lending — deposit collateral, borrow, repay, withdraw
-
-### Tests (61 tests, all passing)
-- Math utilities, IL calculations, risk management, vault operations, token mechanics
-
-## Deployed on Sepolia
+### v5 (working deposit/withdraw, LM=0 fallback)
 
 | Contract | Address |
-|----------|---------|
-| SyBtcToken | `0x0536b7...bff278` |
-| VaultManager | `0x01d230...d98a6` |
+|---|---|
+| VaultManager | `0x040489e90e3cafad2446fecb229bc06fea17f535788135469f12a15b983ef976` |
+| SyBtcToken | `0x076cb4dadb2db9a95072ecffbb67a61076e642eced3d7f37361ff6f202018be3` |
+| MockWBTC (faucet) | `0x066cd5e247ef08479917e46a387057706aeb57cfc5bfa27b225352b304424163` |
+| MockUSDC | `0x023e418680b7210d7e3c3307a5e02f4b326201dbd6b9bf0c28e95a4cedaecfeb` |
 
-## Getting Started
+### v6 (LEVAMM + VirtualPool + Staker + Governance — deployed 2026-02-27)
 
-### Prerequisites
+| Contract | Address |
+|---|---|
+| Factory | `0x0253d30100bd7cbbc2bf146bdddcbb4adfc0cae0dc3d2a3ab172a1b4e21c8780` |
+| LevAMM | `0x0623647a3e0f7f7a7aa0061a692c4e64e916dd853e0d71624da95f4076fff4af` |
+| VirtualPool | `0x00f720c999fdedd3d4a1e393dda0ce1a4e5b0bf079a8608d61f19ba5e77a190c` |
+| Staker | `0x04620f57ef40e7e2293ca6d06153930697bcb88d173f1634ba5cff768acec273` |
+| SyYbToken | `0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e` |
 
-- [Scarb](https://docs.swmansion.com/scarb/) (Cairo package manager)
-- [Starknet Foundry](https://foundry-rs.github.io/starknet-foundry/) (snforge for testing)
-- [Starkli](https://github.com/xJonathanLEI/starkli) (for deployment)
+---
 
-### Build
+## Quick Start
+
+### Frontend
+
+```bash
+cd frontend
+npm install
+npm run dev
+# Visit http://localhost:3000
+```
+
+Connect Argent or Braavos wallet on Starknet Sepolia, then:
+1. **Faucet** — get testnet wBTC
+2. **Deposit** — specify amount → approve + deposit
+3. **Withdraw** — specify amount to redeem
+
+### Contracts (requires Scarb + sncast in WSL)
 
 ```bash
 cd contracts
 scarb build
 ```
 
-### Run Tests
+---
 
-```bash
-cd contracts
-snforge test
+## LEVAMM Math
+
+```
+LEV_RATIO = (L/(L+1))^2 = (2/3)^2 = 4/9   (for L=2)
+
+x0 = (C + sqrt(C^2 - 4·C·LEV_RATIO·D)) / (2·LEV_RATIO)
+
+Invariant I(p0) = (x0 - d_btc) · y
+
+Safety bands: DTV ∈ [6.25%, 53.125%]
 ```
 
-Expected output: `Tests: 61 passed, 0 failed, 0 ignored, 0 filtered out`
+Where:
+- `C` = collateral value (USDC, 1e18)
+- `D` = debt (USDC, 1e18)
+- `d_btc` = D / BTC_price (debt in BTC units)
+- `y` = collateral value (= C at initialization)
 
-### Deploy to Sepolia
-
-```bash
-cd scripts
-chmod +x deploy.sh
-./deploy.sh
-```
+---
 
 ## Tech Stack
 
-- **Language:** Cairo 2.x
-- **Framework:** Starknet
-- **Dependencies:** OpenZeppelin Cairo Contracts, Starknet Foundry
-- **Oracles:** Pragma Network
-- **DEX:** Ekubo Protocol
-- **Lending:** Vesu Finance
+| Component | Tech |
+|---|---|
+| Smart Contracts | Cairo 2, Scarb, OpenZeppelin Cairo |
+| DEX | Ekubo (BTC/USDC pool) |
+| Lending | Vesu (CDP: LP collateral → USDC borrow) |
+| Oracle | Pragma Network (BTC/USD) |
+| Rebalancing | Arbitrageurs via VirtualPool (atomic flash loans) |
+| Frontend | Next.js 14, starknet-react, starknet.js |
+| Network | Starknet Sepolia |
+
+---
+
+## Hackathon
+
+Built for the Starknet hackathon. Demonstrates an IL-free BTC yield strategy using 2× leveraged liquidity, a Constant Leverage AMM (LEVAMM), atomic VirtualPool rebalancing, and a syYB governance token system.

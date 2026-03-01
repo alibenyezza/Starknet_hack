@@ -42,4 +42,19 @@ pub mod Constants {
 
     /// Default slippage tolerance (0.5% = 0.005e18)
     pub const DEFAULT_SLIPPAGE: u256 = 5000000000000000;
+
+    // ── LEVAMM constants ─────────────────────────────────────────────────────
+
+    /// Leverage ratio for 2× leverage: (L/(L+1))^2 = (2/3)^2 = 4/9 scaled to 1e18
+    /// 4e18 / 9 = 444_444_444_444_444_444
+    pub const LEV_RATIO_2X: u256 = 444_444_444_444_444_444;
+
+    /// Safety band minimum DTV for 2× leverage: 6.25% (1e18-scaled)
+    pub const DTV_MIN_2X: u256 = 62_500_000_000_000_000;
+
+    /// Safety band maximum DTV for 2× leverage: 53.125% (1e18-scaled)
+    pub const DTV_MAX_2X: u256 = 531_250_000_000_000_000;
+
+    /// Default Staker reward rate: 1e12 syYB per block per unit staked
+    pub const DEFAULT_REWARD_RATE: u256 = 1_000_000_000_000;
 }

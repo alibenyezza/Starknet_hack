@@ -29,11 +29,27 @@ desktop.ini
 .idea/
 
 # Node (frontend)
+frontend/node_modules/
 node_modules/
 .next/
 dist/
 .env.local
 .env.production
+
+# Scarb build artifacts
+contracts/target/
+
+# Sncast accounts
+accounts.json
+contracts/accounts.json
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Vercel
+.vercel
 
 # Misc
 *.log
