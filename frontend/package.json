@@ -10,8 +10,15 @@
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0"
   },
   "dependencies": {
+    "@bigmi/react": "^0.7.0",
+    "@lifi/wallet-management": "^3.22.7",
+    "@lifi/widget": "^3.40.11",
+    "@mysten/dapp-kit": "^1.0.3",
+    "@mysten/sui": "^2.5.0",
+    "@solana/wallet-adapter-react": "^0.15.39",
     "@starknet-react/chains": "^0.1.7",
     "@starknet-react/core": "^2.9.0",
+    "@tanstack/react-query": "^5.90.21",
     "clsx": "^2.1.0",
     "date-fns": "^3.0.6",
     "framer-motion": "^10.18.0",
@@ -24,7 +31,8 @@
     "react-icons": "^5.5.0",
     "recharts": "^2.10.3",
     "starknet": "^6.11.0",
-    "three": "^0.182.0"
+    "three": "^0.182.0",
+    "wagmi": "^2.19.5"
   },
   "devDependencies": {
     "@types/react": "^18.2.43",

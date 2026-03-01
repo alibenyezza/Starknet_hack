@@ -5,6 +5,7 @@ import { Hero } from '@/components/landing/Hero';
 import ResourcesPage from '@/pages/ResourcesPage';
 import TeamPage from '@/pages/TeamPage';
 import VaultPage from '@/pages/VaultPage';
+import SwapPage from '@/pages/SwapPage';
 import { ToastContainer } from '@/components/ui/Toast';
 import { useToast } from '@/hooks/useToast';
 import LogoLoop from '@/components/ui/LogoLoop';
@@ -14,6 +15,7 @@ import { AccountMenu } from '@/components/wallet/AccountMenu';
 import { useBTCPrice } from '@/hooks/useBTCPrice';
 import { FileTextIcon } from '@/components/ui/icons/FileTextIcon';
 import { HomeIcon } from '@/components/ui/icons/HomeIcon';
+import { SwapIcon } from '@/components/ui/icons/SwapIcon';
 import { UserIcon } from '@/components/ui/icons/UserIcon';
 import StarBorder from '@/components/ui/StarBorder';
 import clsx from 'clsx';
@@ -24,7 +26,7 @@ import starknetLogo from '@/assets/SN-Stacked-Gradient - On dark bg.svg';
 import vesuLogo from '@/assets/vesu logo 1.svg';
 import starkLogo from '@/assets/logo stark vf.svg';
 
-type Page = 'home' | 'vault' | 'docs' | 'team';
+type Page = 'home' | 'vault' | 'swap' | 'docs' | 'team';
 
 const partnerLogos = [
   {
@@ -82,6 +84,12 @@ function App() {
       ariaLabel: 'Go to home page',
       onClick: () => setCurrentPage('home'),
       icon: <HomeIcon size={22} />,
+    },
+    {
+      label: 'Swap',
+      ariaLabel: 'Swap and bridge tokens',
+      onClick: () => setCurrentPage('swap'),
+      icon: <SwapIcon size={22} />,
     },
     {
       label: 'Docs',
@@ -172,6 +180,8 @@ function App() {
       <main style={{ position: 'relative', zIndex: 1 }}>
         {currentPage === 'docs' ? (
           <ResourcesPage onNavigateHome={() => setCurrentPage('home')} />
+        ) : currentPage === 'swap' ? (
+          <SwapPage />
         ) : currentPage === 'team' ? (
           <TeamPage onNavigateHome={() => setCurrentPage('home')} />
         ) : currentPage === 'vault' ? (

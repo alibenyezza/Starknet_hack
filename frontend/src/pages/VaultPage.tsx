@@ -1,8 +1,6 @@
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { useAccount, useDisconnect } from '@starknet-react/core';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { HomeIcon } from '@/components/ui/icons/HomeIcon';
 import StarkYieldLogoBg from '@/components/ui/StarkYieldLogoBg';
-import { motion, useAnimation } from 'framer-motion';
 import {
   AreaChart,
   Area,
@@ -80,107 +78,7 @@ function fmtDollar(v: number): string {
   return `$${(v / 1000).toFixed(1)}k`;
 }
 
-/* ---- Animated Delete Icon ---- */
-const LID_VARIANTS = {
-  normal: { y: 0 },
-  animate: { y: -1.1 },
-};
-
-const SPRING_TRANSITION = {
-  type: 'spring' as const,
-  stiffness: 500,
-  damping: 30,
-};
-
-function DeleteIcon({ size = 18, onMouseEnter, onMouseLeave }: {
-  size?: number;
-  onMouseEnter?: (e: React.MouseEvent<HTMLDivElement>) => void;
-  onMouseLeave?: (e: React.MouseEvent<HTMLDivElement>) => void;
-}) {
-  const controls = useAnimation();
-
-  const handleMouseEnter = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      controls.start('animate');
-      onMouseEnter?.(e);
-    },
-    [controls, onMouseEnter]
-  );
-
-  const handleMouseLeave = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      controls.start('normal');
-      onMouseLeave?.(e);
-    },
-    [controls, onMouseLeave]
-  );
-
-  return (
-    <div
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      style={{ display: 'inline-flex', alignItems: 'center' }}
-    >
-      <svg
-        fill="none"
-        height={size}
-        stroke="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="2"
-        viewBox="0 0 24 24"
-        width={size}
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <motion.g
-          animate={controls}
-          transition={SPRING_TRANSITION}
-          variants={LID_VARIANTS}
-        >
-          <path d="M3 6h18" />
-          <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
-        </motion.g>
-        <motion.path
-          animate={controls}
-          d="M19 8v12c0 1-1 2-2 2H7c-1 0-2-1-2-2V8"
-          transition={SPRING_TRANSITION}
-          variants={{
-            normal: { d: 'M19 8v12c0 1-1 2-2 2H7c-1 0-2-1-2-2V8' },
-            animate: { d: 'M19 9v12c0 1-1 2-2 2H7c-1 0-2-1-2-2V9' },
-          }}
-        />
-        <motion.line
-          animate={controls}
-          transition={SPRING_TRANSITION}
-          variants={{
-            normal: { y1: 11, y2: 17 },
-            animate: { y1: 11.5, y2: 17.5 },
-          }}
-          x1="10"
-          x2="10"
-          y1={11}
-          y2={17}
-        />
-        <motion.line
-          animate={controls}
-          transition={SPRING_TRANSITION}
-          variants={{
-            normal: { y1: 11, y2: 17 },
-            animate: { y1: 11.5, y2: 17.5 },
-          }}
-          x1="14"
-          x2="14"
-          y1={11}
-          y2={17}
-        />
-      </svg>
-    </div>
-  );
-}
-
 export default function VaultPage({ onNavigateHome }: VaultPageProps) {
-  const { address } = useAccount();
-  const { disconnect } = useDisconnect();
   const vault = useVaultManager();
   const { price: realBtcPrice, priceChange24h } = useBTCPrice();
   const { toasts, removeToast, success, error: toastError, info } = useToast();
@@ -190,15 +88,6 @@ export default function VaultPage({ onNavigateHome }: VaultPageProps) {
   const [showError, setShowError] = useState(false);
   const [displayCurrency, setDisplayCurrency] = useState<'USD' | 'BTC'>('USD');
   const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('3m');
-
-  const shortAddress = address
-    ? `${String(address).slice(0, 6)}...${String(address).slice(-4)}`
-    : '';
-
-  const handleDisconnect = () => {
-    disconnect();
-    onNavigateHome?.();
-  };
 
   const numericAmount = parseFloat(amount) || 0;
   // Use real CoinGecko market price (fallback to vault mock price, then hardcoded)
@@ -351,16 +240,6 @@ export default function VaultPage({ onNavigateHome }: VaultPageProps) {
           Home
         </button>
         <div className="vault-topbar-right">
-          {shortAddress && (
-            <div className="vault-wallet-chip">
-              <span className="vault-wallet-dot" />
-              <span className="vault-wallet-addr">{shortAddress}</span>
-            </div>
-          )}
-          <button className="vault-disconnect-btn" onClick={handleDisconnect} type="button">
-            <DeleteIcon size={16} />
-            <span style={{ marginLeft: '0.3rem' }}>Disconnect</span>
-          </button>
         </div>
       </div>
 
