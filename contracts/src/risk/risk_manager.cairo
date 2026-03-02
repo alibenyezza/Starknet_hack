@@ -10,7 +10,12 @@ pub enum HealthStatus {
     Danger,     // HF <= 1.2
 }
 
-/// Risk Manager - Monitors and enforces protocol safety
+/// Risk Manager — YieldBasis protocol safety monitor
+///
+/// In YieldBasis the health factor is LP-based:
+///   HF = LP_value / (debt × LIQUIDATION_THRESHOLD)
+/// where LP_value = Ekubo pool value of the CDP collateral (USDC, 18-decimal).
+/// The `collateral` parameter throughout this module refers to LP value, not raw BTC.
 ///
 /// Responsibilities:
 /// - Health factor classification

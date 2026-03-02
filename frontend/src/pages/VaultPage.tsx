@@ -504,6 +504,44 @@ export default function VaultPage({ onNavigateHome }: VaultPageProps) {
               </div>
             )}
 
+            {/* YieldBasis LP stats row — shown when vault has active LP position */}
+            {vault.vaultLpStats.totalLpValue > 0 && (
+              <div style={{
+                display: 'flex', gap: '0.75rem', marginTop: '0.35rem', fontSize: '0.7rem',
+                color: 'rgba(255,255,255,0.45)', flexWrap: 'wrap', alignItems: 'center',
+                padding: '0.3rem 0.5rem',
+                background: 'rgba(34,197,94,0.05)',
+                borderRadius: '6px',
+                border: '1px solid rgba(34,197,94,0.15)',
+              }}>
+                <span style={{ color: 'rgba(34,197,94,0.65)', fontWeight: 600, fontSize: '0.65rem', letterSpacing: '0.06em' }}>
+                  YieldBasis CDP
+                </span>
+                <span>
+                  LP Value: <b style={{ color: 'rgba(255,255,255,0.75)' }}>
+                    ${vault.vaultLpStats.totalLpValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </b>
+                </span>
+                <span>
+                  CDP Debt: <b style={{ color: 'rgba(255,255,255,0.65)' }}>
+                    ${vault.vaultLpStats.totalDebt.toLocaleString(undefined, { maximumFractionDigits: 2 })}
+                  </b>
+                </span>
+                <span>
+                  DTV: <b style={{
+                    color: vault.vaultLpStats.dtv > 0.53 ? '#f87171'
+                         : vault.vaultLpStats.dtv < 0.063 ? '#facc15'
+                         : '#4ade80'
+                  }}>
+                    {(vault.vaultLpStats.dtv * 100).toFixed(2)}%
+                  </b>
+                </span>
+                <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.62rem' }}>
+                  (target: 50%)
+                </span>
+              </div>
+            )}
+
             <div className="vault-position-bar-container">
               <div className="vault-position-bar">
                 <div
