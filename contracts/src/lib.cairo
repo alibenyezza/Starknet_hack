@@ -12,3 +12,5 @@ pub mod factory;
 pub mod amm;
 pub mod pool;
 pub mod staker;
+pub mod oracle;
+pub mod fees;

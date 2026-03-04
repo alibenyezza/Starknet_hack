@@ -35,16 +35,26 @@ const ERC20_ABI = [
   },
 ] as const;
 
+// v8-slim VaultManager: only storage-read views remain
 const VAULT_ABI = [
-  { type: 'function', name: 'get_total_assets',    inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
-  { type: 'function', name: 'get_share_price',     inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
-  { type: 'function', name: 'get_health_factor',   inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
-  { type: 'function', name: 'get_current_leverage',inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
-  { type: 'function', name: 'get_btc_price',       inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
+  { type: 'function', name: 'get_total_debt',   inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
+  { type: 'function', name: 'get_total_shares', inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
   {
     type: 'function',
     name: 'get_user_shares',
     inputs: [{ name: 'user', type: 'core::starknet::contract_address::ContractAddress' }],
+    outputs: [{ type: 'core::integer::u256' }],
+    state_mutability: 'view',
+  },
+] as const;
+
+// MockEkuboAdapter: price + LP value (read directly, removed from VaultManager)
+const EKUBO_ABI = [
+  { type: 'function', name: 'get_btc_price', inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
+  {
+    type: 'function',
+    name: 'get_lp_value',
+    inputs: [{ name: 'token_id', type: 'core::integer::u64' }],
     outputs: [{ type: 'core::integer::u256' }],
     state_mutability: 'view',
   },
@@ -74,12 +84,9 @@ const LEVAMM_ABI = [
   { type: 'function', name: 'accrue_interest', inputs: [], outputs: [], state_mutability: 'external' },
 ] as const;
 
+// VirtualPool v7 — flash loan only (no rebalance endpoint exposed to UI)
 const VIRTUAL_POOL_ABI = [
-  { type: 'function', name: 'can_rebalance',              inputs: [], outputs: [{ type: 'core::bool' }],         state_mutability: 'view' },
-  { type: 'function', name: 'get_imbalance_direction',    inputs: [], outputs: [{ type: 'core::bool' }],         state_mutability: 'view' },
-  { type: 'function', name: 'get_total_profit_distributed', inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
-  { type: 'function', name: 'get_last_rebalance_block',   inputs: [], outputs: [{ type: 'core::integer::u64' }], state_mutability: 'view' },
-  { type: 'function', name: 'rebalance',                  inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'external' },
+  { type: 'function', name: 'get_owner', inputs: [], outputs: [{ type: 'core::starknet::contract_address::ContractAddress' }], state_mutability: 'view' },
 ] as const;
 
 const STAKER_ABI = [
@@ -159,19 +166,28 @@ export interface VaultStats {
   vaultBtcPrice: number;
 }
 
+/** YieldBasis LP-based stats (new vault_manager) */
+export interface VaultLpStats {
+  totalLpValue: number; // USDC value of the Ekubo LP position
+  totalDebt:    number; // USDC CDP debt
+  dtv:          number; // Debt-To-Value ratio (0–1, e.g. 0.5 = 50%)
+}
+
 export function useVaultManager() {
   const { account, address } = useAccount();
 
   // Use direct RPC URL so it works both in dev and on Vercel production.
   // In dev, Vite also proxies /rpc, but the direct URL avoids that dependency.
-  const rpc = useMemo(() => new RpcProvider({ nodeUrl: 'https://api.cartridge.gg/x/starknet/sepolia', blockIdentifier: 'latest' }), []);
+  // /rpc is proxied by Vite to Nethermind — avoids CORS on read calls
+  const rpc = useMemo(() => new RpcProvider({ nodeUrl: '/rpc', blockIdentifier: 'latest' }), []);
 
   // Contract instances
-  const btcContract         = useMemo(() => new Contract(ERC20_ABI       as any, CONTRACTS.BTC_TOKEN,     rpc), [rpc]);
-  const vaultContract       = useMemo(() => new Contract(VAULT_ABI       as any, CONTRACTS.VAULT_MANAGER, rpc), [rpc]);
-  const levammContract      = useMemo(() => new Contract(LEVAMM_ABI      as any, CONTRACTS.LEVAMM,        rpc), [rpc]);
-  const virtualPoolContract = useMemo(() => new Contract(VIRTUAL_POOL_ABI as any, CONTRACTS.VIRTUAL_POOL,  rpc), [rpc]);
-  const stakerContract      = useMemo(() => new Contract(STAKER_ABI      as any, CONTRACTS.STAKER,        rpc), [rpc]);
+  const btcContract         = useMemo(() => new Contract(ERC20_ABI        as any, CONTRACTS.BTC_TOKEN,          rpc), [rpc]);
+  const vaultContract       = useMemo(() => new Contract(VAULT_ABI        as any, CONTRACTS.VAULT_MANAGER,      rpc), [rpc]);
+  const ekuboContract       = useMemo(() => new Contract(EKUBO_ABI        as any, CONTRACTS.MOCK_EKUBO_ADAPTER, rpc), [rpc]);
+  const levammContract      = useMemo(() => new Contract(LEVAMM_ABI       as any, CONTRACTS.LEVAMM,             rpc), [rpc]);
+  const virtualPoolContract = useMemo(() => new Contract(VIRTUAL_POOL_ABI as any, CONTRACTS.VIRTUAL_POOL,       rpc), [rpc]);
+  const stakerContract      = useMemo(() => new Contract(STAKER_ABI       as any, CONTRACTS.STAKER,             rpc), [rpc]);
 
   // ── state ──────────────────────────────────────────────────────────────
   const [wbtcBalance,    setWbtcBalance]    = useState(0);
@@ -180,6 +196,10 @@ export function useVaultManager() {
 
   const [stats, setStats] = useState<VaultStats>({
     totalAssets: 0, sharePrice: 1, healthFactor: 0, leverage: 0, vaultBtcPrice: 96000,
+  });
+
+  const [vaultLpStats, setVaultLpStats] = useState<VaultLpStats>({
+    totalLpValue: 0, totalDebt: 0, dtv: 0,
   });
 
   const [isLoading,     setIsLoading]     = useState(false);
@@ -216,24 +236,31 @@ export function useVaultManager() {
   const refresh = useCallback(async () => {
     setIsLoading(true);
 
-    // ── Vault-level stats — isolated so oracle errors don't block wBTC balance ──
-    let priceBn = 0n;
+    // ── v8-slim: read price + LP value from ekubo adapter directly ──────
     try {
-      const [assets, price, hf, lev, btcRaw] = await Promise.all([
-        vaultContract.get_total_assets(),
-        vaultContract.get_share_price(),
-        vaultContract.get_health_factor(),
-        vaultContract.get_current_leverage(),
-        vaultContract.get_btc_price(),
+      // get_btc_price() returns raw integer (e.g. 96000), NOT 1e18-scaled
+      // get_lp_value()  returns 1e18-scaled USDC value
+      // get_total_debt() returns 1e18-scaled USDC debt (from vault storage)
+      const [btcPriceRaw, lpValRaw, lpDebtRaw] = await Promise.all([
+        isDeployed(CONTRACTS.MOCK_EKUBO_ADAPTER) ? ekuboContract.get_btc_price()    : Promise.resolve(96000n),
+        isDeployed(CONTRACTS.MOCK_EKUBO_ADAPTER) ? ekuboContract.get_lp_value(1n)   : Promise.resolve(0n),
+        isDeployed(CONTRACTS.VAULT_MANAGER)      ? vaultContract.get_total_debt()   : Promise.resolve(0n),
       ]);
-      priceBn = toBigInt(price);
+      const btcPriceNum = Number(toBigInt(btcPriceRaw));   // e.g. 96000 (USD, raw)
+      const lpV         = fromWei(lpValRaw);               // e.g. 192000 (USD, 1e18→float)
+      const debt        = fromWei(lpDebtRaw);              // e.g. 96000  (USD, 1e18→float)
+      const dtv         = lpV > 0 ? debt / lpV : 0;
+      const equity      = Math.max(0, lpV - debt);
+      const hf          = debt > 0 ? lpV / (debt * 0.8) : 999;
+      const leverage    = equity > 0 ? lpV / equity : 2;
       setStats({
-        totalAssets:   fromWei(assets),
-        sharePrice:    fromWei(price),
-        healthFactor:  fromWei(hf),
-        leverage:      fromWei(lev),
-        vaultBtcPrice: fromWei(btcRaw),
+        totalAssets:   btcPriceNum > 0 ? equity / btcPriceNum : 0,
+        sharePrice:    1,
+        healthFactor:  hf,
+        leverage,
+        vaultBtcPrice: btcPriceNum,
       });
+      setVaultLpStats({ totalLpValue: lpV, totalDebt: debt, dtv });
     } catch (err) {
       console.error('[useVaultManager] vault stats error:', err);
     }
@@ -249,9 +276,8 @@ export function useVaultManager() {
         const sharesBn = toBigInt(shares);
         setWbtcBalance(fromWei(balBn));
         setUserShares(sharesBn);
-        const depositBTC = sharesBn === 0n || priceBn === 0n
-          ? 0
-          : Number(sharesBn * priceBn / (10n ** 18n)) / 10 ** 18;
+        // v7: shares are 1:1 with BTC (no sharePrice division needed)
+        const depositBTC = fromWei(sharesBn);
         setUserDepositBTC(depositBTC);
       } catch (err) {
         console.error('[useVaultManager] user balance error:', err);
@@ -270,10 +296,6 @@ export function useVaultManager() {
           levammContract.get_collateral_value(),
           levammContract.get_debt(),
         ]);
-        const [canRebal, totalProfit] = await Promise.all([
-          virtualPoolContract.can_rebalance(),
-          virtualPoolContract.get_total_profit_distributed(),
-        ]);
         setLevammStats({
           dtv:             fromWei(dtv),
           x0:              fromWei(x0),
@@ -282,8 +304,8 @@ export function useVaultManager() {
           isOverLevered:   Boolean(overLevered),
           isUnderLevered:  Boolean(underLevered),
           isInitialized:   Boolean(active),
-          canRebalance:    Boolean(canRebal),
-          totalProfit:     fromWei(totalProfit),
+          canRebalance:    false,
+          totalProfit:     0,
         });
       } catch (err) {
         console.error('[useVaultManager] levamm stats error:', err);
@@ -312,7 +334,7 @@ export function useVaultManager() {
     }
 
     setIsLoading(false);
-  }, [address, btcContract, vaultContract, levammContract, virtualPoolContract, stakerContract]);
+  }, [address, btcContract, vaultContract, ekuboContract, levammContract, virtualPoolContract, stakerContract]);
 
   useEffect(() => {
     refresh();
@@ -327,13 +349,27 @@ export function useVaultManager() {
     setIsFauceting(true);
     try {
       const [low, high] = u256Calldata(toWei(1));
-      const tx = await account.execute([{
-        contractAddress: CONTRACTS.BTC_TOKEN,
-        entrypoint: 'faucet',
-        calldata: [low, high],
-      }]);
-      setTimeout(refresh, 5000);  // first refresh ~5s after tx
-      setTimeout(refresh, 12000); // second refresh ~12s (Starknet can be slow)
+      const calls = [{ contractAddress: CONTRACTS.BTC_TOKEN, entrypoint: 'faucet', calldata: [low, high] }];
+      // Retry up to 3 times on Timeout (Argent X port reconnect transient issue)
+      let tx: any;
+      let lastErr: unknown;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          if (attempt > 0) await new Promise(r => setTimeout(r, 1500));
+          tx = await account.execute(calls);
+          break;
+        } catch (e: unknown) {
+          lastErr = e;
+          const msg = e instanceof Error ? e.message : String(e);
+          if (!msg.includes('Timeout')) throw e; // re-throw non-timeout errors immediately
+          console.warn(`[faucet] Timeout attempt ${attempt + 1}/3, retrying...`);
+        }
+      }
+      if (!tx) throw lastErr;
+      // Wait for tx to be accepted on L2, then refresh balance
+      rpc.waitForTransaction(tx.transaction_hash).then(() => refresh()).catch(() => {
+        setTimeout(refresh, 15000);
+      });
       return { success: true, txHash: tx.transaction_hash };
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -342,7 +378,7 @@ export function useVaultManager() {
     } finally {
       setIsFauceting(false);
     }
-  }, [account, refresh]);
+  }, [account, refresh, rpc]);
 
   const deposit = useCallback(async (
     btcAmount: number,
@@ -364,7 +400,9 @@ export function useVaultManager() {
           calldata: [low, high],
         },
       ]);
-      setTimeout(refresh, 4000);
+      rpc.waitForTransaction(tx.transaction_hash).then(() => refresh()).catch(() => {
+        setTimeout(refresh, 15000);
+      });
       return { success: true, txHash: tx.transaction_hash };
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -373,7 +411,7 @@ export function useVaultManager() {
     } finally {
       setIsDepositing(false);
     }
-  }, [account, refresh]);
+  }, [account, refresh, rpc]);
 
   const withdraw = useCallback(async (
     btcAmount?: number,
@@ -381,10 +419,10 @@ export function useVaultManager() {
     if (!account)          return { success: false, error: 'Wallet not connected' };
     if (userShares === 0n) return { success: false, error: 'No shares to withdraw' };
 
-    // Convert BTC amount → shares proportionally: shares = btcAmount / sharePrice
+    // v7: shares are 1:1 with BTC (1 BTC deposited = 1e18 LT shares)
     let sharesToWithdraw: bigint;
-    if (btcAmount !== undefined && btcAmount > 0 && stats.sharePrice > 0) {
-      sharesToWithdraw = toWei(btcAmount / stats.sharePrice);
+    if (btcAmount !== undefined && btcAmount > 0) {
+      sharesToWithdraw = toWei(btcAmount);
       if (sharesToWithdraw > userShares) sharesToWithdraw = userShares;
     } else {
       sharesToWithdraw = userShares;
@@ -398,7 +436,9 @@ export function useVaultManager() {
         entrypoint: 'withdraw',
         calldata: [low, high],
       }]);
-      setTimeout(refresh, 4000);
+      rpc.waitForTransaction(tx.transaction_hash).then(() => refresh()).catch(() => {
+        setTimeout(refresh, 15000);
+      });
       return { success: true, txHash: tx.transaction_hash };
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -407,7 +447,7 @@ export function useVaultManager() {
     } finally {
       setIsWithdrawing(false);
     }
-  }, [account, userShares, stats.sharePrice, refresh]);
+  }, [account, userShares, refresh, rpc]);
 
   const rebalance = useCallback(async (): Promise<{ success: boolean; txHash?: string; error?: string }> => {
     if (!account) return { success: false, error: 'Wallet not connected' };
@@ -548,6 +588,7 @@ export function useVaultManager() {
     userDepositBTC,
     userShares,
     stats,
+    vaultLpStats,
     isLoading,
     isDepositing,
     isWithdrawing,

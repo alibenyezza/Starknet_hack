@@ -28,7 +28,7 @@
   justify-content: space-between;
   width: 100%;
   max-width: 1200px;
-  margin: 0 auto 2rem;
+  margin: 0 auto 0.5rem;
   position: relative;
   z-index: 3;
   flex-shrink: 0;
@@ -103,6 +103,41 @@
   color: #fca5a5;
 }
 
+/* ---- Mode Toggle ---- */
+.vault-mode-toggle {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1.25rem;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 0.25rem;
+}
+
+.vault-mode-btn {
+  flex: 1;
+  padding: 0.55rem 0.75rem;
+  background: transparent;
+  border: none;
+  border-radius: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+}
+
+.vault-mode-btn:hover {
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.vault-mode-btn.active {
+  background: rgba(68, 68, 204, 0.15);
+  color: #8888ee;
+  box-shadow: 0 0 12px rgba(68, 68, 204, 0.1);
+}
+
 /* ---- Two-column layout ---- */
 .vault-layout {
   display: flex;
@@ -129,6 +164,7 @@
   gap: 2.5rem;
   min-height: 0;
   padding-bottom: 2rem;
+  margin-top: -1rem;
 }
 
 @media (max-width: 900px) {
@@ -526,6 +562,125 @@
 .vault-filter-btn:hover {
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.65);
+}
+
+.vault-filter-btn.active {
+  background: rgba(68, 68, 204, 0.15);
+  border-color: rgba(68, 68, 204, 0.3);
+  color: #8888ee;
+}
+
+/* ---- Transaction List ---- */
+.vault-tx-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.vault-tx-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.vault-tx-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+
+.vault-tx-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  transition: background 0.15s;
+}
+
+.vault-tx-row:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.vault-tx-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.vault-tx-icon[data-type="deposit"] {
+  background: rgba(74, 222, 128, 0.1);
+  color: #4ade80;
+}
+
+.vault-tx-icon[data-type="withdraw"] {
+  background: rgba(251, 146, 60, 0.1);
+  color: #fb923c;
+}
+
+.vault-tx-icon[data-type="faucet"] {
+  background: rgba(96, 165, 250, 0.1);
+  color: #60a5fa;
+}
+
+.vault-tx-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.vault-tx-type {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.vault-tx-time {
+  font-size: 0.7rem;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.vault-tx-amount {
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-family: 'JetBrains Mono', monospace;
+  white-space: nowrap;
+}
+
+.vault-tx-amount[data-type="deposit"],
+.vault-tx-amount[data-type="faucet"] {
+  color: #4ade80;
+}
+
+.vault-tx-amount[data-type="withdraw"] {
+  color: #fb923c;
+}
+
+.vault-tx-link {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 0.75rem;
+  text-decoration: none;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+
+.vault-tx-link:hover {
+  background: rgba(68, 68, 204, 0.15);
+  color: #8888ee;
 }
 
 .vault-no-transactions {

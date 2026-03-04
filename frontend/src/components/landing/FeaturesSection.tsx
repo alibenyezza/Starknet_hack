@@ -4,27 +4,27 @@ import './FeaturesSection.css';
 const features = [
   {
     num: '01',
-    title: 'Optimized Bitcoin Yield',
+    title: 'Deposit and Earn',
     description:
-      'The first IL-free Bitcoin yield protocol on Starknet L2. Deposit wBTC once and earn automatically across three DeFi strategies — no manual management, no impermanent loss.',
+      'Deposit your wBTC into the Vault. You receive syBTC shares that represent your position. Your Bitcoin starts generating yield immediately through our leveraged AMM engine.',
   },
   {
     num: '02',
-    title: 'Dynamic Leverage Rebalancing',
+    title: 'Leveraged AMM Engine',
     description:
-      'Powered by Pragma Oracle real-time price feeds, StarkYield automatically detects when BTC/USDC deviate from optimal ranges and rebalances leverage positions on-chain — protecting your yield without any intervention.',
+      'The LEVAMM contract amplifies your returns by managing leveraged positions on concentrated liquidity pools. It tracks debt-to-value ratios in real time and adjusts exposure automatically to maximize yield while keeping risk under control.',
   },
   {
     num: '03',
-    title: 'Multi-Strategy Diversification',
+    title: 'Autonomous Rebalancing',
     description:
-      'Your BTC is deployed across Ekubo DEX concentrated liquidity (35%), Vesu lending markets (40%), and Endur liquid staking (25%). Each strategy is managed independently and rebalanced dynamically to maximize risk-adjusted APY.',
+      'The VirtualPool monitors every position and triggers on-chain rebalancing when leverage drifts beyond safe thresholds. Over-levered or under-levered, the protocol corrects itself. No human intervention. No impermanent loss.',
   },
   {
     num: '04',
-    title: 'Non-Custodial & Transparent',
+    title: 'Stake and Compound',
     description:
-      "All logic runs on Cairo smart contracts, fully verified by Starknet's ZK proof system. You hold your syBTC vault shares and can redeem at any time. No admin keys, no rug vectors — pure on-chain execution.",
+      'Stake your syBTC shares in the Staker contract to earn additional protocol rewards. Claim anytime, unstake anytime. Everything runs on Cairo smart contracts verified by Starknet ZK proofs. Fully non-custodial, fully transparent.',
   },
 ];
 
