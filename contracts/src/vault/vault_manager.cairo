@@ -1,11 +1,13 @@
-//! Vault Manager — YieldBasis v9 (ultra-slim for mock adapters)
+//! Vault Manager — YieldBasis v10 (correct CDP + flash loan order)
 //!
-//! Deposit:  borrow_usdc (uncollateralized mock) → add_liquidity → deposit_lp → mint LT
-//! Withdraw: withdraw_lp → remove_liquidity → repay_usdc (counter-only) → burn LT → send BTC
+//! Deposit:  flash_loan(usdc) → add_liquidity(BTC+USDC→LP) → deposit_collateral_lp
+//!           → borrow_usdc → repay_flash_loan → mint LT
 //!
-//! No flash loan needed: MockLendingAdapter.borrow_usdc mints USDC directly (no collateral
-//! check), and repay_usdc only decrements a counter (no token transfer).
-//! No events. No pause. 4 dispatcher types, 13 total external calls vs 24 before.
+//! Withdraw: flash_loan(debt) → repay_usdc → withdraw_collateral_lp → remove_liquidity
+//!           → repay_flash_loan → burn LT → send BTC
+//!
+//! The VirtualPool provides fee-less flash loans (mock: USDC minted via faucet).
+//! Borrowing occurs AFTER the LP is posted as collateral (correct CDP semantics).
 
 use starknet::ContractAddress;
 
@@ -26,7 +28,7 @@ trait ILtMin<TContractState> {
     fn burn(ref self: TContractState, from: ContractAddress, amount: u256);
 }
 
-/// MockEkuboAdapter: price + liquidity only (no get_lp_value — read from adapter directly)
+/// MockEkuboAdapter: price + liquidity
 #[starknet::interface]
 trait IEkuboFacade<TContractState> {
     fn get_btc_price(self: @TContractState) -> u256;
@@ -41,6 +43,13 @@ trait ILendingFacade<TContractState> {
     fn withdraw_collateral_lp(ref self: TContractState) -> felt252;
     fn borrow_usdc(ref self: TContractState, amount: u256);
     fn repay_usdc(ref self: TContractState, amount: u256);
+}
+
+/// VirtualPool: fee-less flash loans
+#[starknet::interface]
+trait IVirtualPoolFacade<TContractState> {
+    fn flash_loan(ref self: TContractState, amount: u256);
+    fn repay_flash_loan(ref self: TContractState, amount: u256);
 }
 
 // ── Public interface ─────────────────────────────────────────────────────────
@@ -58,10 +67,11 @@ pub trait IVaultManager<TContractState> {
 pub mod VaultManager {
     use super::{
         IVaultManager, ContractAddress,
-        IERC20MinDispatcher,      IERC20MinDispatcherTrait,
-        ILtMinDispatcher,         ILtMinDispatcherTrait,
-        IEkuboFacadeDispatcher,   IEkuboFacadeDispatcherTrait,
-        ILendingFacadeDispatcher, ILendingFacadeDispatcherTrait,
+        IERC20MinDispatcher,           IERC20MinDispatcherTrait,
+        ILtMinDispatcher,              ILtMinDispatcherTrait,
+        IEkuboFacadeDispatcher,        IEkuboFacadeDispatcherTrait,
+        ILendingFacadeDispatcher,      ILendingFacadeDispatcherTrait,
+        IVirtualPoolFacadeDispatcher,  IVirtualPoolFacadeDispatcherTrait,
     };
     use starknet::{get_caller_address, get_contract_address};
     use starknet::storage::Map;
@@ -73,6 +83,7 @@ pub mod VaultManager {
         lt_token:        ContractAddress,
         ekubo_adapter:   ContractAddress,
         lending_adapter: ContractAddress,
+        virtual_pool:    ContractAddress,
         owner:           ContractAddress,
         total_shares:    u256,
         user_shares:     Map<ContractAddress, u256>,
@@ -91,7 +102,7 @@ pub mod VaultManager {
         lt_token:        ContractAddress,
         ekubo_adapter:   ContractAddress,
         lending_adapter: ContractAddress,
-        virtual_pool:    ContractAddress, // kept for deploy-script compat, ignored in v9
+        virtual_pool:    ContractAddress,
         owner:           ContractAddress,
     ) {
         self.btc_token.write(btc_token);
@@ -99,14 +110,18 @@ pub mod VaultManager {
         self.lt_token.write(lt_token);
         self.ekubo_adapter.write(ekubo_adapter);
         self.lending_adapter.write(lending_adapter);
+        self.virtual_pool.write(virtual_pool);
         self.owner.write(owner);
-        let _ = virtual_pool; // no flash loan in v9
     }
 
     #[abi(embed_v0)]
     impl VaultManagerImpl of IVaultManager<ContractState> {
-        /// Deposit BTC — YieldBasis CDP flow (mock-simplified, no flash loan).
-        /// MockLendingAdapter.borrow_usdc mints USDC directly without collateral check.
+        /// Deposit BTC — correct YieldBasis CDP flow.
+        ///
+        /// Order: flash_loan → add_liquidity → deposit_collateral_lp → borrow_usdc → repay_flash_loan
+        ///
+        /// The LP is posted as collateral BEFORE borrowing — economically sound.
+        /// The borrowed USDC exactly covers the flash loan repayment.
         fn deposit(ref self: ContractState, amount: u256) -> u256 {
             assert(amount > 0, 'Amount must be > 0');
 
@@ -116,33 +131,44 @@ pub mod VaultManager {
             let usdc_addr  = self.usdc_token.read();
             let ekubo_addr = self.ekubo_adapter.read();
             let lend_addr  = self.lending_adapter.read();
+            let vpool_addr = self.virtual_pool.read();
             let lt_addr    = self.lt_token.read();
 
-            let btc     = IERC20MinDispatcher     { contract_address: btc_addr };
-            let usdc    = IERC20MinDispatcher     { contract_address: usdc_addr };
-            let ekubo   = IEkuboFacadeDispatcher  { contract_address: ekubo_addr };
-            let lending = ILendingFacadeDispatcher{ contract_address: lend_addr };
-            let lt      = ILtMinDispatcher        { contract_address: lt_addr };
+            let btc     = IERC20MinDispatcher           { contract_address: btc_addr };
+            let usdc    = IERC20MinDispatcher           { contract_address: usdc_addr };
+            let ekubo   = IEkuboFacadeDispatcher        { contract_address: ekubo_addr };
+            let lending = ILendingFacadeDispatcher      { contract_address: lend_addr };
+            let vpool   = IVirtualPoolFacadeDispatcher  { contract_address: vpool_addr };
+            let lt      = ILtMinDispatcher              { contract_address: lt_addr };
 
             // 1. Pull BTC from user
             let ok = btc.transfer_from(caller, this, amount);
             assert(ok, 'BTC transfer_from failed');
 
-            // 2. USDC needed = amount × raw BTC price (e.g. 1e18 × 96000 = 96000e18)
+            // 2. USDC needed = amount × raw BTC price (e.g. 1 BTC × 96000 = 96000 USDC)
             let usdc_needed = amount * ekubo.get_btc_price();
 
-            // 3. Borrow USDC from lending (mock: mints USDC, no collateral check)
-            lending.borrow_usdc(usdc_needed);
+            // 3. Flash loan: VirtualPool mints usdc_needed and sends to vault
+            //    (vault temporarily holds BTC + USDC, net cost = 0 at end)
+            vpool.flash_loan(usdc_needed);
 
-            // 4. Add LP: vault → Ekubo (BTC + USDC → LP token)
+            // 4. Add LP: vault provides BTC + USDC → receives LP token
             btc.approve(ekubo_addr, amount);
             usdc.approve(ekubo_addr, usdc_needed);
             let lp_id = ekubo.add_liquidity(amount, usdc_needed);
 
-            // 5. Record LP as CDP collateral
+            // 5. Post LP as CDP collateral — BEFORE borrowing (correct CDP semantics)
             lending.deposit_collateral_lp(lp_id.into());
 
-            // 6. Mint LT shares 1:1 with deposited BTC + update accounting
+            // 6. Borrow USDC against LP collateral (mock: mints USDC to vault)
+            //    This USDC is used to repay the flash loan.
+            lending.borrow_usdc(usdc_needed);
+
+            // 7. Repay flash loan with borrowed USDC
+            usdc.approve(vpool_addr, usdc_needed);
+            vpool.repay_flash_loan(usdc_needed);
+
+            // 8. Mint LT shares 1:1 with deposited BTC + update accounting
             let shares = amount;
             lt.mint(caller, shares);
             let cur = self.user_shares.read(caller);
@@ -153,9 +179,16 @@ pub mod VaultManager {
             shares
         }
 
-        /// Withdraw BTC — simplified (no flash loan needed with mock).
-        /// MockLendingAdapter.withdraw_collateral_lp does not enforce debt repayment.
-        /// MockLendingAdapter.repay_usdc only decrements a counter (no token transfer).
+        /// Withdraw BTC — correct YieldBasis CDP flow.
+        ///
+        /// Order: flash_loan(debt) → repay_usdc → withdraw_collateral_lp
+        ///        → remove_liquidity → [re-add remaining LP] → repay_flash_loan → burn LT → send BTC
+        ///
+        /// Flash loan covers the CDP debt repayment. After LP removal, the
+        /// recovered USDC repays the flash loan. Net: vault → user gets BTC back.
+        ///
+        /// For partial withdrawals, the remaining (non-withdrawn) portion of BTC+USDC
+        /// is re-added to the LP so the remaining depositors' position stays intact.
         fn withdraw(ref self: ContractState, shares: u256) -> u256 {
             assert(shares > 0, 'Shares must be > 0');
 
@@ -168,35 +201,62 @@ pub mod VaultManager {
             let debt_share = if total > 0 { shares * total_debt / total } else { 0 };
 
             let btc_addr   = self.btc_token.read();
+            let usdc_addr  = self.usdc_token.read();
             let ekubo_addr = self.ekubo_adapter.read();
             let lend_addr  = self.lending_adapter.read();
+            let vpool_addr = self.virtual_pool.read();
             let lt_addr    = self.lt_token.read();
 
-            let btc     = IERC20MinDispatcher     { contract_address: btc_addr };
-            let ekubo   = IEkuboFacadeDispatcher  { contract_address: ekubo_addr };
-            let lending = ILendingFacadeDispatcher{ contract_address: lend_addr };
-            let lt      = ILtMinDispatcher        { contract_address: lt_addr };
+            let btc     = IERC20MinDispatcher           { contract_address: btc_addr };
+            let usdc    = IERC20MinDispatcher           { contract_address: usdc_addr };
+            let ekubo   = IEkuboFacadeDispatcher        { contract_address: ekubo_addr };
+            let lending = ILendingFacadeDispatcher      { contract_address: lend_addr };
+            let vpool   = IVirtualPoolFacadeDispatcher  { contract_address: vpool_addr };
+            let lt      = ILtMinDispatcher              { contract_address: lt_addr };
 
-            // 1. Withdraw LP collateral (mock: no debt check)
+            // 1. Flash loan: get USDC to repay CDP debt
+            if debt_share > 0 { vpool.flash_loan(debt_share); }
+
+            // 2. Repay CDP debt (mock: counter-only; vault still holds flash loan USDC)
+            if debt_share > 0 { lending.repay_usdc(debt_share); }
+
+            // 3. Withdraw LP collateral (CDP now cleared)
             let lp_felt   = lending.withdraw_collateral_lp();
             let lp_id_u64: u64 = lp_felt.try_into().unwrap_or(1_u64);
 
-            // 2. Remove LP → BTC + USDC (USDC stays in vault, not needed for repay)
-            let (btc_all, _) = ekubo.remove_liquidity(lp_id_u64);
+            // 4. Remove ALL LP → get BTC + USDC back from Ekubo (mock always removes full pool)
+            let (btc_all, usdc_all) = ekubo.remove_liquidity(lp_id_u64);
 
-            // 3. User's proportional BTC
+            // 5. Re-add proportional LP for remaining depositors (partial withdraw fix).
+            //    Without this, remove_liquidity clears the entire pool and remaining
+            //    depositors have no LP backing — causing DTV to blow up on next deposit.
+            let remaining = total - shares;
+            if remaining > 0 && btc_all > 0 {
+                let btc_re  = btc_all  * remaining / total;
+                let usdc_re = usdc_all * remaining / total;
+                if btc_re  > 0 { btc.approve(ekubo_addr,  btc_re);  }
+                if usdc_re > 0 { usdc.approve(ekubo_addr, usdc_re); }
+                let new_lp_id = ekubo.add_liquidity(btc_re, usdc_re);
+                // Re-register remaining LP as CDP collateral for remaining depositors
+                lending.deposit_collateral_lp(new_lp_id.into());
+            }
+
+            // 6. User's proportional BTC (rest stays in vault as stranded dust for mock)
             let btc_out = if total > 0 { btc_all * shares / total } else { btc_all };
 
-            // 4. Repay debt (mock: counter-only, no token transfer required)
-            if debt_share > 0 { lending.repay_usdc(debt_share); }
+            // 7. Repay flash loan (vault still has debt_share USDC since repay_usdc is counter-only)
+            if debt_share > 0 {
+                usdc.approve(vpool_addr, debt_share);
+                vpool.repay_flash_loan(debt_share);
+            }
 
-            // 5. Burn LT + update accounting
+            // 8. Burn LT + update accounting
             lt.burn(caller, shares);
             self.user_shares.write(caller, user_bal - shares);
             self.total_shares.write(total - shares);
             self.total_debt.write(if total_debt >= debt_share { total_debt - debt_share } else { 0 });
 
-            // 6. Transfer BTC to user
+            // 9. Transfer BTC to user
             if btc_out > 0 { btc.transfer(caller, btc_out); }
 
             btc_out

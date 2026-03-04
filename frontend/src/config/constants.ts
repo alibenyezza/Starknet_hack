@@ -1,15 +1,13 @@
 // Contract Addresses (Testnet Sepolia)
-// v5: VaultManager + SyBtcToken
-// v6: Factory + LevAMM + VirtualPool + Staker + SyYbToken
-// v7: YieldBasis rewrite — LtToken + new MockEkubo/Lending + VirtualPool + VaultManager
-//   → Deploy with scripts/deploy_v7.sh, then fill in the v7 addresses below
+// v11: YieldBasis — withdraw fix: re-adds remaining LP on partial withdrawals
+//   Fresh MockEkuboAdapter (clears old v9 LP residue), DTV always 50% after deposit
 export const CONTRACTS = {
-  // ── v7 (YieldBasis — deploy with scripts/deploy_v7.sh) ───────────────────
-  VAULT_MANAGER:        '0x0797a73712b6555e8bb9ddb2ac9fa78a7de9035ee83b496865e756b85c2cbf1b',
-  LT_TOKEN:             '0x0329ea731410c3544d93a8f7326201634b02f76d146ce572709ae410d6756c47',
+  // ── v11 (YieldBasis — partial withdraw fix, fresh Ekubo state) ────────────
+  VAULT_MANAGER:        '0x064545b91c4dbf735325a55c409e943efb30f6ac7ad43b37d1571f9ab0cdd7dd',
+  LT_TOKEN:             '0x07a4533ef574e8b4caedf42f9493d18839138f2adbb4b4352875240cb00700f3',
   VIRTUAL_POOL:         '0x0460d5b3cf27cbf296495c22301badd05a68c50c416036c7ed33c5454eed5f55',
-  MOCK_EKUBO_ADAPTER:   '0x01f46c9c60dca701db51acfdbd17279145f56446d979ec93d1c63a564b18e1a5',
-  MOCK_LENDING_ADAPTER: '0x01d3c4293e6e7a5de4284947d8ba07b64c026e1da7b535d41439e929f13140a1',
+  MOCK_EKUBO_ADAPTER:   '0x04b976de5c0192201aafc143208d8df2e25aedec98ee749959c57b8c7d60b8ba',
+  MOCK_LENDING_ADAPTER: '0x0007e6598cb8e5067749624f7e47c85a81f127b1dbf2ce020d74d2492eb39d0b',
 
   // ── Tokens (stable, reused from v5/v6) ───────────────────────────────────
   BTC_TOKEN:     '0x066cd5e247ef08479917e46a387057706aeb57cfc5bfa27b225352b304424163',

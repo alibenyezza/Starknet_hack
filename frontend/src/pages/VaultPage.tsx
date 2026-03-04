@@ -448,8 +448,8 @@ export default function VaultPage({ onNavigateHome }: VaultPageProps) {
               </button>
             </div>
 
-            {/* LEVAMM stats row — only shown when contract is deployed */}
-            {vault.levammStats.isInitialized && (
+            {/* LEVAMM stats row — hidden (v6 deprecated, replaced by YieldBasis v10 CDP) */}
+            {false && vault.levammStats.isInitialized && (
               <div style={{
                 display: 'flex', gap: '0.75rem', marginTop: '0.4rem', fontSize: '0.7rem',
                 color: 'rgba(255,255,255,0.45)', flexWrap: 'wrap', alignItems: 'center',

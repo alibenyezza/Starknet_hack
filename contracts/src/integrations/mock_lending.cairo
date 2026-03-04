@@ -59,7 +59,20 @@ pub mod MockLendingAdapter {
 
     #[event]
     #[derive(Drop, starknet::Event)]
-    enum Event {}
+    enum Event {
+        CollateralLPDeposited: CollateralLPDeposited,
+        CollateralLPWithdrawn: CollateralLPWithdrawn,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct CollateralLPDeposited {
+        lp_id: felt252,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct CollateralLPWithdrawn {
+        lp_id: felt252,
+    }
 
     #[constructor]
     fn constructor(
@@ -152,12 +165,14 @@ pub mod MockLendingAdapter {
         /// Records LP token ID as CDP collateral (mock: no NFT transfer needed).
         fn deposit_collateral_lp(ref self: ContractState, lp_id: felt252) {
             self.lp_token_id.write(lp_id);
+            self.emit(CollateralLPDeposited { lp_id });
         }
 
         /// Returns stored LP token ID and clears it.
         fn withdraw_collateral_lp(ref self: ContractState) -> felt252 {
             let lp_id = self.lp_token_id.read();
             self.lp_token_id.write(0);
+            self.emit(CollateralLPWithdrawn { lp_id });
             lp_id
         }
 
