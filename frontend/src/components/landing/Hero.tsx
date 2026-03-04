@@ -140,6 +140,64 @@ export function Hero({ onNavigateDocs: _onNavigateDocs, onNavigateVault, isConne
         </StarBorder>
       </div>
 
+      {/* Gradient fade between hero and opportunity section */}
+      <div
+        style={{
+          position: 'relative',
+          zIndex: 2,
+          height: '12rem',
+          background: 'linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.85) 100%)',
+          pointerEvents: 'none',
+        }}
+      />
+
+      {/* The Opportunity stat section */}
+      <section
+        style={{
+          position: 'relative',
+          zIndex: 3,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          textAlign: 'center',
+          padding: '4rem 2rem 8rem',
+          background: 'rgba(0, 0, 0, 0.85)',
+        }}
+      >
+        <div>
+          <p
+            style={{
+              fontSize: '0.875rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.2em',
+              color: 'rgba(255, 255, 255, 0.5)',
+              marginBottom: '1.5rem',
+            }}
+          >
+            The Opportunity
+          </p>
+          <div
+            style={{
+              fontSize: 'clamp(3rem, 8vw, 6rem)',
+              fontWeight: 300,
+              color: 'rgb(255, 255, 255)',
+            }}
+          >
+            $20B+
+          </div>
+          <p
+            style={{
+              marginTop: '1rem',
+              fontSize: '1.125rem',
+              color: 'rgba(255, 255, 255, 0.6)',
+              maxWidth: 540,
+            }}
+          >
+            in staked liquidity affected by impermanent loss across DeFi pools. None of them have a real solution.
+          </p>
+        </div>
+      </section>
+
       {/* Features numbered scroll section */}
       <div style={{ position: 'relative', zIndex: 1 }}>
         <FeaturesSection />
