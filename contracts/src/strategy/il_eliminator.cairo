@@ -1,11 +1,13 @@
 use starkyield::utils::constants::Constants;
 use starkyield::utils::math::Math;
 
-/// IL Eliminator - Core mathematical engine for Impermanent Loss calculation
-/// and leverage-based IL compensation.
+/// IL Eliminator — YieldBasis monitoring module
 ///
-/// IL Formula: IL = 2 * sqrt(price_ratio) / (1 + price_ratio) - 1
-/// where price_ratio = current_price / entry_price
+/// In YieldBasis, IL is structurally eliminated because the LP position is matched
+/// 1:1 by a USDC CDP debt. This module is retained for monitoring and analytics only.
+/// No active rebalancing is performed here; VirtualPool handles rebalancing externally.
+///
+/// IL Formula (reference): IL = 1 - 2*sqrt(r)/(1+r) where r = p1/p0
 
 #[starknet::interface]
 pub trait IILEliminator<TContractState> {

@@ -21,6 +21,15 @@ pub trait IMockEkuboAdmin<TContractState> {
     fn get_btc_price(self: @TContractState) -> u256;
 }
 
+/// LP value query and ownership transfer (YieldBasis extension)
+#[starknet::interface]
+pub trait IMockEkuboLP<TContractState> {
+    /// Returns total LP value in USDC units (18-decimal) for the given token_id.
+    fn get_lp_value(self: @TContractState, token_id: u64) -> u256;
+    /// No-op in mock: ownership is implicit in the single shared pool.
+    fn transfer_lp(ref self: TContractState, token_id: u64, to: ContractAddress);
+}
+
 /// Minimal faucet interface — avoids circular imports
 #[starknet::interface]
 trait IFaucet<TContractState> {
@@ -29,10 +38,10 @@ trait IFaucet<TContractState> {
 
 #[starknet::contract]
 pub mod MockEkuboAdapter {
-    use super::{ContractAddress, IMockEkuboAdmin, IFaucetDispatcher, IFaucetDispatcherTrait};
+    use super::{ContractAddress, IMockEkuboAdmin, IMockEkuboLP, IFaucetDispatcher, IFaucetDispatcherTrait};
     use starkyield::integrations::ekubo::IEkuboAdapter;
     use starkyield::integrations::ierc20::{IERC20Dispatcher, IERC20DispatcherTrait};
-    use starknet::get_caller_address;
+    use starknet::{get_caller_address, get_contract_address};
 
     // Default BTC price: $96,000 (both tokens 18 decimals, so no extra scaling)
     const DEFAULT_BTC_PRICE: u256 = 96000_u256;
@@ -103,11 +112,21 @@ pub mod MockEkuboAdapter {
         }
 
         /// Simulate adding LP.
-        /// BTC and USDC already in this contract.
-        /// Tracks amounts and returns fixed token_id = 1.
+        /// Pulls BTC and USDC from caller into this contract and tracks amounts.
+        /// Caller must approve this contract for both tokens before calling.
         fn add_liquidity(
             ref self: ContractState, btc_amount: u256, usdc_amount: u256,
         ) -> u64 {
+            let caller = get_caller_address();
+            let this = get_contract_address();
+            if btc_amount > 0 {
+                IERC20Dispatcher { contract_address: self.btc_token.read() }
+                    .transfer_from(caller, this, btc_amount);
+            }
+            if usdc_amount > 0 {
+                IERC20Dispatcher { contract_address: self.usdc_token.read() }
+                    .transfer_from(caller, this, usdc_amount);
+            }
             self.lp_btc.write(self.lp_btc.read() + btc_amount);
             self.lp_usdc.write(self.lp_usdc.read() + usdc_amount);
             1_u64
@@ -141,6 +160,22 @@ pub mod MockEkuboAdapter {
 
         fn get_btc_price(self: @ContractState) -> u256 {
             self.btc_price.read()
+        }
+    }
+
+    #[abi(embed_v0)]
+    impl MockEkuboLPImpl of IMockEkuboLP<ContractState> {
+        /// Returns total LP value in USDC (18-decimal).
+        /// Mock: single shared pool, so all token_ids map to the same pool.
+        fn get_lp_value(self: @ContractState, token_id: u64) -> u256 {
+            let _ = token_id;
+            self.lp_btc.read() * self.btc_price.read() + self.lp_usdc.read()
+        }
+
+        /// No-op: mock uses implicit shared-pool ownership.
+        fn transfer_lp(ref self: ContractState, token_id: u64, to: ContractAddress) {
+            let _ = token_id;
+            let _ = to;
         }
     }
 }

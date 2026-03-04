@@ -1,13 +1,14 @@
-//! LEVAMM — Constant Leverage AMM (2× IL-free)
+//! LEVAMM — Constant Leverage AMM (2× IL-free) — YieldBasis semantics
 //!
-//! Implements the bonding curve that maintains 2× leverage on the BTC/USDC position.
-//! The core insight: applying leverage L=2 to the standard AMM (√p curve) yields p^(L/2) = p,
-//! which tracks the asset price linearly → zero impermanent loss.
+//! In YieldBasis: x = LP token quantity (not raw BTC), d = USDC debt, C = LP value in USDC.
+//! The bonding curve math is unchanged; only the collateral asset interpretation differs.
+//! LP tokens from the Ekubo BTC/USDC pool serve as collateral in the CDP, making
+//! impermanent loss a non-event (the LP position is always hedged by the debt).
 //!
-//! Mathematical foundation:
+//! Mathematical foundation (invariant in LP-token space):
 //!   LEV_RATIO = (L/(L+1))^2 = (2/3)^2 = 4/9  (for L=2)
 //!   x0 = (C + sqrt(C^2 - 4·C·LEV_RATIO·D)) / (2·LEV_RATIO)
-//!   Invariant I(p0) = (x0(p0) - d_btc) · y
+//!   Invariant I(p0) = (x0(p0) - d_lp) · y  where d_lp = D / lp_price
 //!
 //! Safety bands: DTV (Debt-To-Value) must stay in [6.25%, 53.125%] for 2× leverage.
 
@@ -79,7 +80,7 @@ pub mod LevAMM {
         usdc_token: ContractAddress,
         pragma_adapter: ContractAddress,
         // Position state (all 1e18-scaled)
-        collateral_value: u256,   // C: USD value of LP tokens held as collateral
+        collateral_value: u256,   // C: USDC value of LP tokens held as CDP collateral
         debt: u256,               // D: USDC borrowed (outstanding)
         invariant: u256,          // I(p0): (x0 - d_btc) * y at initialization
         entry_price: u256,        // p0: BTC/USD price at initialization

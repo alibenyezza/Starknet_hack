@@ -11,8 +11,8 @@ const connectors = [
   argent(),
 ];
 
-// /rpc is proxied by Vite to BlastAPI (avoids CORS in development)
-const rpc = () => ({ nodeUrl: '/rpc' });
+// Cartridge.gg public RPC (BlastAPI shut down Mar 2026)
+const rpc = () => ({ nodeUrl: 'https://api.cartridge.gg/x/starknet/sepolia' });
 
 export function StarknetProvider({ children }: StarknetProviderProps) {
   return (

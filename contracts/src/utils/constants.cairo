@@ -57,4 +57,24 @@ pub mod Constants {
 
     /// Default Staker reward rate: 1e12 syYB per block per unit staked
     pub const DEFAULT_REWARD_RATE: u256 = 1_000_000_000_000;
+
+    // ── YieldBasis constants ──────────────────────────────────────────────────
+
+    /// Share of trading fees recycled into the Ekubo pool (50% = 0.5e18)
+    pub const FEE_POOL_SHARE: u256 = 500_000_000_000_000_000;
+
+    /// Share of trading fees distributed to LT holders / vesyYB (50% = 0.5e18)
+    pub const FEE_DIST_SHARE: u256 = 500_000_000_000_000_000;
+
+    /// Minimum admin fee fraction f_min (10% = 0.1e18)
+    pub const MIN_ADMIN_FEE: u256 = 100_000_000_000_000_000;
+
+    /// Flash loan fee — fee-less per YieldBasis design (0%)
+    pub const FLASH_LOAN_FEE: u256 = 0;
+
+    /// Target DTV for 2× leverage CDP position (50% = 0.5e18)
+    pub const TARGET_DTV: u256 = 500_000_000_000_000_000;
+
+    /// Fraction of CDP interest recycled into Ekubo pool (100% = 1e18)
+    pub const INTEREST_RECYCLE_RATE: u256 = 1_000_000_000_000_000_000;
 }
