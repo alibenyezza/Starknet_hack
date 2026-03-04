@@ -692,6 +692,62 @@
   border-radius: 10px;
 }
 
+/* ---- Staked Vault: Rewards Banner ---- */
+.vault-rewards-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  background: rgba(167, 139, 250, 0.07);
+  border: 1px solid rgba(167, 139, 250, 0.2);
+  border-radius: 12px;
+  animation: vault-error-in 0.3s ease-out;
+}
+
+.vault-rewards-banner-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.vault-rewards-banner-label {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.vault-rewards-banner-amount {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #a78bfa;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.vault-claim-btn {
+  padding: 0.45rem 1rem;
+  background: rgba(167, 139, 250, 0.15);
+  border: 1px solid rgba(167, 139, 250, 0.35);
+  border-radius: 10px;
+  color: #a78bfa;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: inherit;
+  white-space: nowrap;
+}
+
+.vault-claim-btn:hover:not(:disabled) {
+  background: rgba(167, 139, 250, 0.25);
+  border-color: rgba(167, 139, 250, 0.55);
+  box-shadow: 0 0 16px rgba(167, 139, 250, 0.2);
+}
+
+.vault-claim-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* ---- Simulation Chart Section ---- */
 .vault-chart-section {
   background: transparent;
