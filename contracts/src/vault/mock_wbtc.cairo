@@ -1,9 +1,9 @@
 //! Mock wBTC Token for testnet
 //!
 //! ERC20 token with public mint/faucet for testing.
-//! Uses DefaultConfig (18 decimals) — same as syBTC for simplicity.
+//! Uses 8 decimals — matching real wBTC on mainnet.
 
-use openzeppelin::token::erc20::{ERC20HooksEmptyImpl, DefaultConfig};
+use openzeppelin::token::erc20::ERC20HooksEmptyImpl;
 
 #[starknet::interface]
 pub trait IMockWBTC<TContractState> {
@@ -13,12 +13,15 @@ pub trait IMockWBTC<TContractState> {
 #[starknet::contract]
 pub mod MockWBTC {
     use super::IMockWBTC;
-    use openzeppelin::token::erc20::{ERC20Component, ERC20HooksEmptyImpl, DefaultConfig};
+    use openzeppelin::token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
     use starknet::get_caller_address;
 
     component!(path: ERC20Component, storage: erc20, event: ERC20Event);
 
-    impl Config = DefaultConfig;
+    /// Custom config: 8 decimals to match real wBTC.
+    pub impl Config of ERC20Component::ImmutableConfig {
+        const DECIMALS: u8 = 8;
+    }
     impl ERC20HooksImpl = ERC20HooksEmptyImpl<ContractState>;
 
     #[abi(embed_v0)]

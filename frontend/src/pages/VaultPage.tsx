@@ -161,7 +161,7 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
 
   // Live earnings
   const sessionStartRef = useRef(Date.now());
-  const [liveEarned,     setLiveEarned]     = useState(0);
+  const [_liveEarned,    setLiveEarned]     = useState(0);
   const [elapsedMs,      setElapsedMs]      = useState(0);
   const [sessionChartData, setSessionChartData] = useState<{ t: number; earned: number }[]>([{ t: 0, earned: 0 }]);
   const perSecondRate = useMemo(() => depositedUSD * activeAPY / 100 / 31_536_000, [depositedUSD, activeAPY]);
@@ -186,16 +186,6 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
   }, [perSecondRate]);
 
   const elapsedHours = elapsedMs / 3_600_000;
-
-  const elapsedLabel = useMemo(() => {
-    const s = Math.floor(elapsedMs / 1000);
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    const sec = s % 60;
-    if (h > 0) return `${h}h ${m}m ${sec}s`;
-    if (m > 0) return `${m}m ${sec}s`;
-    return `${sec}s`;
-  }, [elapsedMs]);
 
   const displayBalance = activeTab === 'deposit'
     ? vault.wbtcBalance
@@ -403,15 +393,30 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                       MAX
                     </button>
                     {activeTab === 'deposit' && (
-                      <button
-                        className="vault-max-btn"
-                        type="button"
-                        onClick={handleFaucet}
-                        disabled={vault.isFauceting}
-                        style={{ marginLeft: '0.4rem', opacity: vault.isFauceting ? 0.6 : 1 }}
-                      >
-                        {vault.isFauceting ? 'Minting…' : 'Faucet +1 wBTC'}
-                      </button>
+                      <>
+                        <button
+                          className="vault-max-btn"
+                          type="button"
+                          onClick={handleFaucet}
+                          disabled={vault.isFauceting}
+                          style={{ marginLeft: '0.4rem', opacity: vault.isFauceting ? 0.6 : 1 }}
+                        >
+                          {vault.isFauceting ? 'Minting…' : 'Faucet +1 wBTC'}
+                        </button>
+                        {vault.wbtcBalance > 100 && (
+                          <button
+                            className="vault-max-btn"
+                            type="button"
+                            onClick={async () => {
+                              const res = await vault.burnWbtc();
+                              if (!res.success) console.error('Burn failed:', res.error);
+                            }}
+                            style={{ marginLeft: '0.4rem', color: '#ff6b6b' }}
+                          >
+                            Burn All
+                          </button>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

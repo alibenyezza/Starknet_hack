@@ -143,4 +143,28 @@ pub mod Math {
         let clamped_min = max(value, min_val);
         min(clamped_min, max_val)
     }
+
+    // ── Decimal normalisation ─────────────────────────────────────────────────
+
+    /// Convert raw BTC amount (8 decimals) to internal 18-decimal representation.
+    /// E.g. 1 BTC = 1_0000_0000 raw → 1_000000000000000000 internal.
+    pub fn normalize_btc(raw: u256) -> u256 {
+        raw * Constants::BTC_SCALE_FACTOR
+    }
+
+    /// Convert internal 18-decimal BTC back to 8-decimal raw amount.
+    pub fn denormalize_btc(internal: u256) -> u256 {
+        internal / Constants::BTC_SCALE_FACTOR
+    }
+
+    /// Convert raw USDC amount (6 decimals) to internal 18-decimal representation.
+    /// E.g. 1 USDC = 1_000000 raw → 1_000000000000000000 internal.
+    pub fn normalize_usdc(raw: u256) -> u256 {
+        raw * Constants::USDC_SCALE_FACTOR
+    }
+
+    /// Convert internal 18-decimal USDC back to 6-decimal raw amount.
+    pub fn denormalize_usdc(internal: u256) -> u256 {
+        internal / Constants::USDC_SCALE_FACTOR
+    }
 }

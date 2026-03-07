@@ -10,6 +10,26 @@ pub mod Constants {
     /// Scaling factor for fixed-point arithmetic (1e18)
     pub const SCALE: u256 = 1_000000000000000000;
 
+    // ── Token decimals ────────────────────────────────────────────────────────
+
+    /// BTC token decimals (matches real wBTC: 8)
+    pub const BTC_DECIMALS: u8 = 8;
+
+    /// USDC token decimals (matches real USDC: 6)
+    pub const USDC_DECIMALS: u8 = 6;
+
+    /// Internal 18-decimal precision used for fixed-point math
+    pub const INTERNAL_DECIMALS: u8 = 18;
+
+    /// Scale factor to normalise raw BTC (8 dec) → internal (18 dec): 10^(18-8) = 1e10
+    pub const BTC_SCALE_FACTOR: u256 = 10_000_000_000;
+
+    /// Scale factor to normalise raw USDC (6 dec) → internal (18 dec): 10^(18-6) = 1e12
+    pub const USDC_SCALE_FACTOR: u256 = 1_000_000_000_000;
+
+    /// Minimum shares burned on first EkuboLPWrapper deposit (inflation-attack guard)
+    pub const MIN_INITIAL_SHARES: u256 = 1_000;
+
     /// Target leverage ratio (2x = 2e18)
     pub const TARGET_LEVERAGE: u256 = 2_000000000000000000;
 

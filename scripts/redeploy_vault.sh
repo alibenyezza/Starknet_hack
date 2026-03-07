@@ -1,188 +1,72 @@
 #!/bin/bash
-# ============================================================
-# StarkYield - Full redeploy: MockPragma + LM + SyBTC + Vault
-#
-# Deploys everything fresh using only mock adapters (no real oracles).
-# Keeps: MockWBTC, MockUSDC, MockEkubo, MockLending
-#
-# Run from WSL:
-#   export HOME=/home/byezz
-#   export PATH=/home/byezz/.asdf/shims:/home/byezz/.local/bin:$PATH
-#   bash /mnt/c/.../scripts/redeploy_vault.sh
-# ============================================================
+# Redeploy VaultManager only — decimal fix (usdc_needed / 100)
+# sed -i 's/\r$//' /mnt/c/Users/byezz/Desktop/starknethackathon/lastupdate/Starknet_hack/scripts/redeploy_vault.sh
+# bash /mnt/c/Users/byezz/Desktop/starknethackathon/lastupdate/Starknet_hack/scripts/redeploy_vault.sh
 
 set -e
 
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-CYAN='\033[0;36m'
-NC='\033[0m'
+ACC="sepolia"
+OWNER="0x2b34981d2405a91eb0683fd144707d6ba9b402c7df8f9d3aaa9e359ec628653"
 
-SNCAST_ACCOUNT="${SNCAST_ACCOUNT:-sepolia}"
-OWNER_ADDRESS="0x2b34981d2405a91eb0683fd144707d6ba9b402c7df8f9d3aaa9e359ec628653"
+# Existing contracts (unchanged)
+WBTC="0x01299997532891f6cb0088b5c779138f98f29d5a03e23e9611fad7071dffd89b"
+USDC="0x02ada118d8ec35abdf936f2d2f93cbe0d4fc66bd16bb51ef3b4f2baf20d32306"
+LT="0x035ae494029fd2f4c3b27ed85c78b761c71d8a13e5f81f1180009bd41258b468"
+EKUBO="0x06c9c6ce0219d849675c1399a996908ced01aa8ec6660b09ab10bb2276908c48"
+LENDING="0x0014c719633c27561470a0b507c4b1458766c6fa4d2b70f979679339e9edb3c7"
+VPOOL="0x034bbd3d99c00f36773e712bbb8cba7022ee97746326cffda0af1c2efcb1a3c3"
 
-# Keep existing mock tokens + Ekubo + Lending
-WBTC_ADDRESS="0x066cd5e247ef08479917e46a387057706aeb57cfc5bfa27b225352b304424163"
-USDC_ADDRESS="0x023e418680b7210d7e3c3307a5e02f4b326201dbd6b9bf0c28e95a4cedaecfeb"
-MOCK_EKUBO="0x02e66ea2016f70c33b75a9dcc48e06ee3746802f0d8de2d4f2ade65cd241c342"
-MOCK_LENDING="0x013640d5dd280ee163b531c13758d737ee00983488cb3858f3dafdf981bf5822"
+TMP=$(mktemp)
 
-WAIT_TIME=45
-
-echo -e "${BLUE}=== StarkYield - Full Redeploy (All Mocks) ===${NC}"
+echo "============================================"
+echo "  Redeploy VaultManager (decimal fix)"
+echo "============================================"
 echo ""
 
-# ============================================================
-# Step 0: Build
-# ============================================================
-echo -e "${GREEN}[0] Building contracts...${NC}"
-cd /mnt/c/Users/byezz/Desktop/starknethackathon/nouveaupush_starknet/Starknet_hack/contracts
-scarb build
-echo -e "${GREEN}Build OK${NC}"
+# ── 1. Declare new VaultManager class ────────────────────────
+echo "[1/3] Declaring VaultManager..."
+sncast --account "$ACC" \
+    declare --network sepolia \
+    --contract-name VaultManager \
+    2>&1 | tee "$TMP"
+CLASS=$(grep -oiP 'Class Hash:\s+\K0x[0-9a-fA-F]+' "$TMP" | head -1)
+if [ -z "$CLASS" ]; then
+    CLASS=$(grep -oiP '0x[0-9a-fA-F]{50,}' "$TMP" | head -1)
+    echo "  (possibly already declared)"
+fi
+echo "  => CLASS: $CLASS"
+sleep 15
 echo ""
 
-# ============================================================
-# Step 1: Deploy MockPragmaAdapter (no real oracle needed)
-# ============================================================
-echo -e "${GREEN}[1/5] Deploying MockPragmaAdapter...${NC}"
-MP_DECLARE=$(sncast --account "$SNCAST_ACCOUNT" \
-    declare --network sepolia --contract-name MockPragmaAdapter 2>&1) || true
-echo "$MP_DECLARE"
-MP_CLASS=$(echo "$MP_DECLARE" | grep -oP 'class_hash:\s+\K0x[0-9a-fA-F]+' \
-    || echo "$MP_DECLARE" | grep -oP 'Class Hash:\s+\K0x[0-9a-fA-F]+' \
-    || echo "$MP_DECLARE" | grep -oP '0x[0-9a-fA-F]{50,}' | head -1 || echo "")
-echo -e "MockPragmaAdapter class: ${YELLOW}$MP_CLASS${NC}"
-sleep $WAIT_TIME
-
-# Constructor: owner
-MP_DEPLOY=$(sncast --account "$SNCAST_ACCOUNT" \
+# ── 2. Deploy new VaultManager ───────────────────────────────
+echo "[2/3] Deploying VaultManager..."
+sncast --account "$ACC" \
     deploy --network sepolia \
-    --class-hash "$MP_CLASS" \
-    --arguments "$OWNER_ADDRESS" \
-    2>&1) || true
-echo "$MP_DEPLOY"
-MOCK_PRAGMA=$(echo "$MP_DEPLOY" | grep -oP 'contract_address:\s+\K0x[0-9a-fA-F]+' \
-    || echo "$MP_DEPLOY" | grep -oP 'Contract Address:\s+\K0x[0-9a-fA-F]+' \
-    || echo "$MP_DEPLOY" | grep -oP '0x[0-9a-fA-F]{50,}' | head -1 || echo "")
-echo -e "${GREEN}MockPragmaAdapter: $MOCK_PRAGMA${NC}"
+    --class-hash "$CLASS" \
+    --arguments "$WBTC, $USDC, $LT, $EKUBO, $LENDING, $VPOOL, 0x0, $OWNER" \
+    2>&1 | tee "$TMP"
+VAULT=$(grep -oiP 'Contract Address:\s+\K0x[0-9a-fA-F]+' "$TMP" | head -1)
+echo "  => NEW VAULT: $VAULT"
+sleep 15
 echo ""
-sleep $WAIT_TIME
 
-# ============================================================
-# Step 2: Deploy LeverageManager (with MockPragma)
-# ============================================================
-echo -e "${GREEN}[2/5] Deploying LeverageManager...${NC}"
-LM_DECLARE=$(sncast --account "$SNCAST_ACCOUNT" \
-    declare --network sepolia --contract-name LeverageManager 2>&1) || true
-echo "$LM_DECLARE"
-LM_CLASS=$(echo "$LM_DECLARE" | grep -oP 'class_hash:\s+\K0x[0-9a-fA-F]+' \
-    || echo "$LM_DECLARE" | grep -oP 'Class Hash:\s+\K0x[0-9a-fA-F]+' \
-    || echo "$LM_DECLARE" | grep -oP '0x[0-9a-fA-F]{50,}' | head -1 || echo "")
-sleep $WAIT_TIME
-
-# Constructor: ekubo_adapter, vesu_adapter, pragma_adapter, btc_token, usdc_token, owner
-LM_DEPLOY=$(sncast --account "$SNCAST_ACCOUNT" \
-    deploy --network sepolia \
-    --class-hash "$LM_CLASS" \
-    --arguments "$MOCK_EKUBO, $MOCK_LENDING, $MOCK_PRAGMA, $WBTC_ADDRESS, $USDC_ADDRESS, $OWNER_ADDRESS" \
-    2>&1) || true
-echo "$LM_DEPLOY"
-NEW_LM=$(echo "$LM_DEPLOY" | grep -oP 'contract_address:\s+\K0x[0-9a-fA-F]+' \
-    || echo "$LM_DEPLOY" | grep -oP 'Contract Address:\s+\K0x[0-9a-fA-F]+' \
-    || echo "$LM_DEPLOY" | grep -oP '0x[0-9a-fA-F]{50,}' | head -1 || echo "")
-echo -e "${GREEN}LeverageManager: $NEW_LM${NC}"
-echo ""
-sleep $WAIT_TIME
-
-# ============================================================
-# Step 3: Deploy SyBtcToken
-# ============================================================
-echo -e "${GREEN}[3/5] Deploying SyBtcToken...${NC}"
-SYBTC_DECLARE=$(sncast --account "$SNCAST_ACCOUNT" \
-    declare --network sepolia --contract-name SyBtcToken 2>&1) || true
-echo "$SYBTC_DECLARE"
-SYBTC_CLASS=$(echo "$SYBTC_DECLARE" | grep -oP 'class_hash:\s+\K0x[0-9a-fA-F]+' \
-    || echo "$SYBTC_DECLARE" | grep -oP 'Class Hash:\s+\K0x[0-9a-fA-F]+' \
-    || echo "$SYBTC_DECLARE" | grep -oP '0x[0-9a-fA-F]{50,}' | head -1 || echo "")
-sleep $WAIT_TIME
-
-SYBTC_DEPLOY=$(sncast --account "$SNCAST_ACCOUNT" \
-    deploy --network sepolia \
-    --class-hash "$SYBTC_CLASS" \
-    --arguments '"StarkYield BTC", "syBTC", '"$OWNER_ADDRESS" \
-    2>&1) || true
-echo "$SYBTC_DEPLOY"
-NEW_SYBTC=$(echo "$SYBTC_DEPLOY" | grep -oP 'contract_address:\s+\K0x[0-9a-fA-F]+' \
-    || echo "$SYBTC_DEPLOY" | grep -oP 'Contract Address:\s+\K0x[0-9a-fA-F]+' \
-    || echo "$SYBTC_DEPLOY" | grep -oP '0x[0-9a-fA-F]{50,}' | head -1 || echo "")
-echo -e "${GREEN}SyBtcToken: $NEW_SYBTC${NC}"
-echo ""
-sleep $WAIT_TIME
-
-# ============================================================
-# Step 4: Deploy VaultManager (all mocks)
-# ============================================================
-echo -e "${GREEN}[4/5] Deploying VaultManager...${NC}"
-VAULT_DECLARE=$(sncast --account "$SNCAST_ACCOUNT" \
-    declare --network sepolia --contract-name VaultManager 2>&1) || true
-echo "$VAULT_DECLARE"
-VAULT_CLASS=$(echo "$VAULT_DECLARE" | grep -oP 'class_hash:\s+\K0x[0-9a-fA-F]+' \
-    || echo "$VAULT_DECLARE" | grep -oP 'Class Hash:\s+\K0x[0-9a-fA-F]+' \
-    || echo "$VAULT_DECLARE" | grep -oP '0x[0-9a-fA-F]{50,}' | head -1 || echo "")
-sleep $WAIT_TIME
-
-# Constructor: btc, usdc, sybtc, ekubo, vesu, pragma, leverage_manager=0 (no-LM fallback), owner
-VAULT_DEPLOY=$(sncast --account "$SNCAST_ACCOUNT" \
-    deploy --network sepolia \
-    --class-hash "$VAULT_CLASS" \
-    --arguments "$WBTC_ADDRESS, $USDC_ADDRESS, $NEW_SYBTC, $MOCK_EKUBO, $MOCK_LENDING, $MOCK_PRAGMA, 0x0, $OWNER_ADDRESS" \
-    2>&1) || true
-echo "$VAULT_DEPLOY"
-NEW_VAULT=$(echo "$VAULT_DEPLOY" | grep -oP 'contract_address:\s+\K0x[0-9a-fA-F]+' \
-    || echo "$VAULT_DEPLOY" | grep -oP 'Contract Address:\s+\K0x[0-9a-fA-F]+' \
-    || echo "$VAULT_DEPLOY" | grep -oP '0x[0-9a-fA-F]{50,}' | head -1 || echo "")
-echo -e "${GREEN}VaultManager: $NEW_VAULT${NC}"
-echo ""
-sleep $WAIT_TIME
-
-# ============================================================
-# Step 5: Transfer SyBTC ownership to VaultManager
-# ============================================================
-echo -e "${GREEN}[5/5] Transferring syBTC ownership to VaultManager...${NC}"
-sncast --account "$SNCAST_ACCOUNT" \
+# ── 3. Transfer LtToken ownership to new VaultManager ────────
+echo "[3/3] LtToken.transfer_ownership -> new VaultManager..."
+sncast --account "$ACC" \
     invoke --network sepolia \
-    --contract-address "$NEW_SYBTC" \
+    --contract-address "$LT" \
     --function transfer_ownership \
-    --arguments "$NEW_VAULT" \
-    2>&1 || true
+    --arguments "$VAULT" \
+    2>&1
+echo "  Done."
 echo ""
-sleep $WAIT_TIME
 
-# ============================================================
-# Summary
-# ============================================================
+rm -f "$TMP"
+
+echo "============================================"
+echo "  REDEPLOY COMPLETE"
+echo "============================================"
 echo ""
-echo -e "${BLUE}============================================================${NC}"
-echo -e "${GREEN}   FULL REDEPLOY COMPLETE (ALL MOCKS - NO REAL ORACLES)${NC}"
-echo -e "${BLUE}============================================================${NC}"
-echo ""
-echo -e "MockPragmaAdapter: ${YELLOW}$MOCK_PRAGMA${NC}"
-echo -e "LeverageManager:   ${YELLOW}$NEW_LM${NC}"
-echo -e "SyBtcToken:        ${YELLOW}$NEW_SYBTC${NC}"
-echo -e "VaultManager:      ${YELLOW}$NEW_VAULT${NC}"
-echo ""
-echo -e "${CYAN}Update frontend/src/config/constants.ts:${NC}"
-cat << EOF
-  VAULT_MANAGER: '$NEW_VAULT',
-  SY_BTC_TOKEN:  '$NEW_SYBTC',
-EOF
-echo ""
-echo -e "Unchanged:"
-echo -e "  BTC_TOKEN:    ${YELLOW}$WBTC_ADDRESS${NC}"
-echo -e "  USDC_TOKEN:   ${YELLOW}$USDC_ADDRESS${NC}"
-echo -e "  MOCK_EKUBO:   ${YELLOW}$MOCK_EKUBO${NC}"
-echo -e "  MOCK_LENDING: ${YELLOW}$MOCK_LENDING${NC}"
-echo ""
-echo -e "${YELLOW}Restart dev server, then: Faucet -> Deposit -> Withdraw${NC}"
+echo "  New VaultManager: $VAULT"
+echo "  (Update frontend/src/config/constants.ts)"
 echo ""

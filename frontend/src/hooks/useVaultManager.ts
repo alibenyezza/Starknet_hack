@@ -8,7 +8,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAccount } from '@starknet-react/core';
 import { RpcProvider, Contract, uint256 } from 'starknet';
-import { CONTRACTS, APP_CONFIG } from '@/config/constants';
+import { CONTRACTS, APP_CONFIG, DECIMALS } from '@/config/constants';
 
 // ── Utility: detect undeployed placeholder address ────────────────────────
 const ZERO_ADDR = '0x' + '0'.repeat(63);
@@ -82,11 +82,6 @@ const LEVAMM_ABI = [
     state_mutability: 'external',
   },
   { type: 'function', name: 'accrue_interest', inputs: [], outputs: [], state_mutability: 'external' },
-] as const;
-
-// VirtualPool v7 — flash loan only (no rebalance endpoint exposed to UI)
-const VIRTUAL_POOL_ABI = [
-  { type: 'function', name: 'get_owner', inputs: [], outputs: [{ type: 'core::starknet::contract_address::ContractAddress' }], state_mutability: 'view' },
 ] as const;
 
 const STAKER_ABI = [
@@ -186,7 +181,6 @@ export function useVaultManager() {
   const vaultContract       = useMemo(() => new Contract(VAULT_ABI        as any, CONTRACTS.VAULT_MANAGER,      rpc), [rpc]);
   const ekuboContract       = useMemo(() => new Contract(EKUBO_ABI        as any, CONTRACTS.MOCK_EKUBO_ADAPTER, rpc), [rpc]);
   const levammContract      = useMemo(() => new Contract(LEVAMM_ABI       as any, CONTRACTS.LEVAMM,             rpc), [rpc]);
-  const virtualPoolContract = useMemo(() => new Contract(VIRTUAL_POOL_ABI as any, CONTRACTS.VIRTUAL_POOL,       rpc), [rpc]);
   const stakerContract      = useMemo(() => new Contract(STAKER_ABI       as any, CONTRACTS.STAKER,             rpc), [rpc]);
 
   // ── state ──────────────────────────────────────────────────────────────
@@ -225,8 +219,6 @@ export function useVaultManager() {
     userStaked: 0,
     pendingRewards: 0,
   });
-  const [isSwapping,            setIsSwapping]            = useState(false);
-  const [isVirtualRebalancing,  setIsVirtualRebalancing]  = useState(false);
   const [isStaking,             setIsStaking]             = useState(false);
   const [isUnstaking,           setIsUnstaking]           = useState(false);
   const [isClaimingRewards,     setIsClaimingRewards]     = useState(false);
@@ -236,23 +228,27 @@ export function useVaultManager() {
   const refresh = useCallback(async () => {
     setIsLoading(true);
 
-    // ── v8-slim: read price + LP value from ekubo adapter directly ──────
+    // ── v12: compute LP value from totalShares + price ──────
     try {
-      // get_btc_price() returns raw integer (e.g. 96000), NOT 1e18-scaled
-      // get_lp_value()  returns 1e18-scaled USDC value
-      // get_total_debt() returns 1e18-scaled USDC debt (from vault storage)
-      const [btcPriceRaw, lpValRaw, lpDebtRaw] = await Promise.all([
-        isDeployed(CONTRACTS.MOCK_EKUBO_ADAPTER) ? ekuboContract.get_btc_price()    : Promise.resolve(96000n),
-        isDeployed(CONTRACTS.MOCK_EKUBO_ADAPTER) ? ekuboContract.get_lp_value(1n)   : Promise.resolve(0n),
-        isDeployed(CONTRACTS.VAULT_MANAGER)      ? vaultContract.get_total_debt()   : Promise.resolve(0n),
+      // get_btc_price() → raw integer (e.g. 96000)
+      // get_total_shares() → BTC-raw (8 dec), shares minted 1:1 with BTC
+      // get_total_debt() → USDC-raw (6 dec)
+      // LP is 50/50: each share's LP = BTC value + matched USDC
+      //   LP value = totalShares/1e8 * price * 2 (BTC side + USDC side)
+      const [btcPriceRaw, totalSharesRaw, lpDebtRaw] = await Promise.all([
+        isDeployed(CONTRACTS.MOCK_EKUBO_ADAPTER) ? ekuboContract.get_btc_price()     : Promise.resolve(96000n),
+        isDeployed(CONTRACTS.VAULT_MANAGER)      ? vaultContract.get_total_shares()  : Promise.resolve(0n),
+        isDeployed(CONTRACTS.VAULT_MANAGER)      ? vaultContract.get_total_debt()    : Promise.resolve(0n),
       ]);
-      const btcPriceNum = Number(toBigInt(btcPriceRaw));   // e.g. 96000 (USD, raw)
-      const lpV         = fromWei(lpValRaw);               // e.g. 192000 (USD, 1e18→float)
-      const debt        = fromWei(lpDebtRaw);              // e.g. 96000  (USD, 1e18→float)
-      const dtv         = lpV > 0 ? debt / lpV : 0;
-      const equity      = Math.max(0, lpV - debt);
-      const hf          = debt > 0 ? lpV / (debt * 0.8) : 999;
-      const leverage    = equity > 0 ? lpV / equity : 2;
+      const btcPriceNum  = Number(toBigInt(btcPriceRaw));           // 96000
+      const totalSharesF = fromWei(totalSharesRaw, DECIMALS.BTC);  // e.g. 0.5 BTC
+      const debt         = fromWei(lpDebtRaw, DECIMALS.USDC);      // e.g. 48000 USD
+      // LP value = BTC value + USDC value = shares*price + debt (USDC borrowed = USDC in LP)
+      const lpV          = totalSharesF * btcPriceNum + debt;       // e.g. 48000+48000 = 96000
+      const dtv          = lpV > 0 ? debt / lpV : 0;               // e.g. 0.50
+      const equity       = Math.max(0, lpV - debt);
+      const hf           = debt > 0 ? lpV / (debt * 0.8) : 999;
+      const leverage     = equity > 0 ? lpV / equity : 2;
       setStats({
         totalAssets:   btcPriceNum > 0 ? equity / btcPriceNum : 0,
         sharePrice:    1,
@@ -274,10 +270,10 @@ export function useVaultManager() {
         ]);
         const balBn    = toBigInt(btcBal);
         const sharesBn = toBigInt(shares);
-        setWbtcBalance(fromWei(balBn));
+        setWbtcBalance(fromWei(balBn, DECIMALS.BTC));
         setUserShares(sharesBn);
-        // v7: shares are 1:1 with BTC (no sharePrice division needed)
-        const depositBTC = fromWei(sharesBn);
+        // v12: shares minted 1:1 with BTC amount (8 decimals)
+        const depositBTC = fromWei(sharesBn, DECIMALS.BTC);
         setUserDepositBTC(depositBTC);
       } catch (err) {
         console.error('[useVaultManager] user balance error:', err);
@@ -334,7 +330,7 @@ export function useVaultManager() {
     }
 
     setIsLoading(false);
-  }, [address, btcContract, vaultContract, ekuboContract, levammContract, virtualPoolContract, stakerContract]);
+  }, [address, btcContract, vaultContract, ekuboContract, levammContract, stakerContract]);
 
   useEffect(() => {
     refresh();
@@ -348,7 +344,7 @@ export function useVaultManager() {
     if (!account) return { success: false, error: 'Wallet not connected' };
     setIsFauceting(true);
     try {
-      const [low, high] = u256Calldata(toWei(1));
+      const [low, high] = u256Calldata(toWei(1, DECIMALS.BTC));
       const calls = [{ contractAddress: CONTRACTS.BTC_TOKEN, entrypoint: 'faucet', calldata: [low, high] }];
       // Retry up to 3 times on Timeout (Argent X port reconnect transient issue)
       let tx: any;
@@ -380,6 +376,29 @@ export function useVaultManager() {
     }
   }, [account, refresh, rpc]);
 
+  const burnWbtc = useCallback(async (): Promise<{ success: boolean; txHash?: string; error?: string }> => {
+    if (!account) return { success: false, error: 'Wallet not connected' };
+    try {
+      const bal = await btcContract.balance_of(account.address);
+      const raw = toBigInt(bal);
+      if (raw === 0n) return { success: false, error: 'Balance already 0' };
+      const [low, high] = u256Calldata(raw);
+      const tx = await account.execute([{
+        contractAddress: CONTRACTS.BTC_TOKEN,
+        entrypoint: 'transfer',
+        calldata: ['0x1', low, high],
+      }]);
+      rpc.waitForTransaction(tx.transaction_hash).then(() => refresh()).catch(() => {
+        setTimeout(refresh, 15000);
+      });
+      return { success: true, txHash: tx.transaction_hash };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[useVaultManager] burnWbtc error:', msg);
+      return { success: false, error: msg };
+    }
+  }, [account, btcContract, refresh, rpc]);
+
   const deposit = useCallback(async (
     btcAmount: number,
   ): Promise<{ success: boolean; txHash?: string; error?: string }> => {
@@ -387,7 +406,7 @@ export function useVaultManager() {
     if (btcAmount <= 0) return { success: false, error: 'Amount must be > 0' };
     setIsDepositing(true);
     try {
-      const [low, high] = u256Calldata(toWei(btcAmount));
+      const [low, high] = u256Calldata(toWei(btcAmount, DECIMALS.BTC));
       const tx = await account.execute([
         {
           contractAddress: CONTRACTS.BTC_TOKEN,
@@ -419,10 +438,10 @@ export function useVaultManager() {
     if (!account)          return { success: false, error: 'Wallet not connected' };
     if (userShares === 0n) return { success: false, error: 'No shares to withdraw' };
 
-    // v7: shares are 1:1 with BTC (1 BTC deposited = 1e18 LT shares)
+    // v12: shares minted 1:1 with BTC amount (8 decimals)
     let sharesToWithdraw: bigint;
     if (btcAmount !== undefined && btcAmount > 0) {
-      sharesToWithdraw = toWei(btcAmount);
+      sharesToWithdraw = toWei(btcAmount, DECIMALS.BTC);
       if (sharesToWithdraw > userShares) sharesToWithdraw = userShares;
     } else {
       sharesToWithdraw = userShares;
@@ -466,52 +485,6 @@ export function useVaultManager() {
       return { success: false, error: msg };
     } finally {
       setIsRebalancing(false);
-    }
-  }, [account, refresh]);
-
-  // ── LEVAMM swap ────────────────────────────────────────────────────────
-  const levammSwap = useCallback(async (
-    direction: boolean,
-    btcAmount: number,
-  ): Promise<{ success: boolean; txHash?: string; error?: string }> => {
-    if (!account) return { success: false, error: 'Wallet not connected' };
-    setIsSwapping(true);
-    try {
-      const [low, high] = u256Calldata(toWei(btcAmount));
-      const tx = await account.execute([{
-        contractAddress: CONTRACTS.LEVAMM,
-        entrypoint: 'swap',
-        calldata: [direction ? '1' : '0', low, high],
-      }]);
-      setTimeout(refresh, 4000);
-      return { success: true, txHash: tx.transaction_hash };
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('[useVaultManager] levamm swap error:', msg);
-      return { success: false, error: msg };
-    } finally {
-      setIsSwapping(false);
-    }
-  }, [account, refresh]);
-
-  // ── VirtualPool rebalance ───────────────────────────────────────────────
-  const virtualRebalance = useCallback(async (): Promise<{ success: boolean; txHash?: string; error?: string }> => {
-    if (!account) return { success: false, error: 'Wallet not connected' };
-    setIsVirtualRebalancing(true);
-    try {
-      const tx = await account.execute([{
-        contractAddress: CONTRACTS.VIRTUAL_POOL,
-        entrypoint: 'rebalance',
-        calldata: [],
-      }]);
-      setTimeout(refresh, 4000);
-      return { success: true, txHash: tx.transaction_hash };
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('[useVaultManager] virtualRebalance error:', msg);
-      return { success: false, error: msg };
-    } finally {
-      setIsVirtualRebalancing(false);
     }
   }, [account, refresh]);
 
@@ -597,18 +570,15 @@ export function useVaultManager() {
     deposit,
     withdraw,
     faucet,
+    burnWbtc,
     rebalance,
     refresh,
     // ── new: LEVAMM / VirtualPool / Staker ──────────────────────────────
     levammStats,
     stakerStats,
-    isSwapping,
-    isVirtualRebalancing,
     isStaking,
     isUnstaking,
     isClaimingRewards,
-    levammSwap,
-    virtualRebalance,
     stakeShares,
     unstakeShares,
     claimRewards,

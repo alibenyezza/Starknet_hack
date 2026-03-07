@@ -5,3 +5,4 @@ pub mod vesu;
 pub mod mock_lending;
 pub mod mock_ekubo;
 pub mod mock_pragma;
+pub mod ekubo_lp_wrapper;

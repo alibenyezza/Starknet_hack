@@ -53,3 +53,4 @@ contracts/accounts.json
 
 # Misc
 *.log
+.env*.local

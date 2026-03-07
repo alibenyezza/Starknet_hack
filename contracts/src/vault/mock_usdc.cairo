@@ -1,9 +1,9 @@
 //! Mock USDC Token for testnet
 //!
 //! ERC20 token with public faucet for testing.
-//! Uses 18 decimals to match MockWBTC and simplify math on testnet.
+//! Uses 6 decimals — matching real USDC on mainnet.
 
-use openzeppelin::token::erc20::{ERC20HooksEmptyImpl, DefaultConfig};
+use openzeppelin::token::erc20::ERC20HooksEmptyImpl;
 
 #[starknet::interface]
 pub trait IMockUSDC<TContractState> {
@@ -14,12 +14,15 @@ pub trait IMockUSDC<TContractState> {
 #[starknet::contract]
 pub mod MockUSDC {
     use super::IMockUSDC;
-    use openzeppelin::token::erc20::{ERC20Component, ERC20HooksEmptyImpl, DefaultConfig};
+    use openzeppelin::token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
     use starknet::{get_caller_address, ContractAddress};
 
     component!(path: ERC20Component, storage: erc20, event: ERC20Event);
 
-    impl Config = DefaultConfig;
+    /// Custom config: 6 decimals to match real USDC.
+    pub impl Config of ERC20Component::ImmutableConfig {
+        const DECIMALS: u8 = 6;
+    }
     impl ERC20HooksImpl = ERC20HooksEmptyImpl<ContractState>;
 
     #[abi(embed_v0)]

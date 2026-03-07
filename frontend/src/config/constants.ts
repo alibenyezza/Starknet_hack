@@ -1,17 +1,20 @@
 // Contract Addresses (Testnet Sepolia)
-// v11: YieldBasis — withdraw fix: re-adds remaining LP on partial withdrawals
-//   Fresh MockEkuboAdapter (clears old v9 LP residue), DTV always 50% after deposit
+// v12: decimal fix (BTC=8, USDC=6), EkuboLPWrapper, GaugeController security
 export const CONTRACTS = {
-  // ── v11 (YieldBasis — partial withdraw fix, fresh Ekubo state) ────────────
-  VAULT_MANAGER:        '0x064545b91c4dbf735325a55c409e943efb30f6ac7ad43b37d1571f9ab0cdd7dd',
-  LT_TOKEN:             '0x07a4533ef574e8b4caedf42f9493d18839138f2adbb4b4352875240cb00700f3',
-  VIRTUAL_POOL:         '0x0460d5b3cf27cbf296495c22301badd05a68c50c416036c7ed33c5454eed5f55',
-  MOCK_EKUBO_ADAPTER:   '0x04b976de5c0192201aafc143208d8df2e25aedec98ee749959c57b8c7d60b8ba',
-  MOCK_LENDING_ADAPTER: '0x0007e6598cb8e5067749624f7e47c85a81f127b1dbf2ce020d74d2492eb39d0b',
+  // ── v12 (decimal fix + new contracts) ─────────────────────────────────────
+  VAULT_MANAGER:        '0x07af1ee2343f2710ac9b7544f0714adf1df292e7e98fece42b3a3e64fe27a3e9',
+  LT_TOKEN:             '0x018a65f5987d06a1e6d537a50ed7c8e4ea5869722f0f3772551e25f81efd4406',
+  VIRTUAL_POOL:         '0x034bbd3d99c00f36773e712bbb8cba7022ee97746326cffda0af1c2efcb1a3c3',
+  MOCK_EKUBO_ADAPTER:   '0x06c9c6ce0219d849675c1399a996908ced01aa8ec6660b09ab10bb2276908c48',
+  MOCK_LENDING_ADAPTER: '0x0014c719633c27561470a0b507c4b1458766c6fa4d2b70f979679339e9edb3c7',
 
-  // ── Tokens (stable, reused from v5/v6) ───────────────────────────────────
-  BTC_TOKEN:     '0x066cd5e247ef08479917e46a387057706aeb57cfc5bfa27b225352b304424163',
-  USDC_TOKEN:    '0x023e418680b7210d7e3c3307a5e02f4b326201dbd6b9bf0c28e95a4cedaecfeb',
+  // ── Tokens (v12 — new decimals: BTC=8, USDC=6) ──────────────────────────
+  BTC_TOKEN:     '0x01299997532891f6cb0088b5c779138f98f29d5a03e23e9611fad7071dffd89b',
+  USDC_TOKEN:    '0x02ada118d8ec35abdf936f2d2f93cbe0d4fc66bd16bb51ef3b4f2baf20d32306',
+
+  // ── New v12 contracts ─────────────────────────────────────────────────────
+  EKUBO_LP_WRAPPER:  '0x00d65a42e2aae825d3065a1693c5ede2e7ee31a1a7dfe8f44e9e1fb73e6f34bb',
+  GAUGE_CONTROLLER:  '0x06a2b1f4a3e58cb0ad7a71f94e7fbfabd975f94863f68401c97019a4c0d567d2',
 
   // ── v6 (kept for reference / Staker / LevAMM UI) ─────────────────────────
   FACTORY:       '0x0253d30100bd7cbbc2bf146bdddcbb4adfc0cae0dc3d2a3ab172a1b4e21c8780',
@@ -45,9 +48,9 @@ export const HEALTH_FACTOR = {
   DANGER: 1.0,
 } as const;
 
-// Token Decimals — MockWBTC uses 18 decimals (Cairo ERC20 default, not real BTC's 8)
+// Token Decimals — v12: MockWBTC uses 8 decimals, MockUSDC uses 6
 export const DECIMALS = {
-  BTC: 18,
+  BTC: 8,
   USDC: 6,
   SHARES: 18,
 } as const;
