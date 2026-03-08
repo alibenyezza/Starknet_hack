@@ -106,7 +106,7 @@ export function Hero({ onNavigateDocs: _onNavigateDocs, onNavigateVault, isConne
             margin: '0 0 2.5rem',
           }}
         >
-          First protocol to eliminate impermanent loss through dynamic leverage
+          First protocol on Starknet to eliminate impermanent loss through dynamic leverage
           rebalancing. Maximize your BTC returns on Starknet L2.
         </p>
 
@@ -140,28 +140,18 @@ export function Hero({ onNavigateDocs: _onNavigateDocs, onNavigateVault, isConne
         </StarBorder>
       </div>
 
-      {/* Gradient fade between hero and opportunity section */}
-      <div
-        style={{
-          position: 'relative',
-          zIndex: 2,
-          height: '12rem',
-          background: 'linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.85) 100%)',
-          pointerEvents: 'none',
-        }}
-      />
-
-      {/* The Opportunity stat section */}
+      {/* The Opportunity stat section — gradient overlay fades from transparent to black */}
       <section
         style={{
           position: 'relative',
           zIndex: 3,
+          marginTop: '-4rem',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
           textAlign: 'center',
-          padding: '4rem 2rem 8rem',
-          background: 'rgba(0, 0, 0, 0.85)',
+          padding: '6rem 2rem 8rem',
+          background: 'linear-gradient(to bottom, transparent 0%, rgba(0, 0, 0, 0.4) 30%, rgba(0, 0, 0, 0.75) 60%, rgba(0, 0, 0, 0.95) 100%)',
         }}
       >
         <div>

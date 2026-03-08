@@ -16,6 +16,10 @@ export function useToast() {
   const addToast = useCallback((message: string, type: ToastType = 'info', link?: ToastLink) => {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, message, type, link }]);
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 5000);
   }, []);
 
   const removeToast = useCallback((id: string) => {

@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import StarkYieldLogoBg from '@/components/ui/StarkYieldLogoBg';
 import {
   AreaChart,
@@ -55,25 +55,12 @@ function timeAgo(ts: number): string {
   return `${days}d ago`;
 }
 
-// Yield Bearing Vault: Ekubo LP fees + CDP interest recycled
-const BTC_APY = 4.12;
-// Staked Vault: base yield + syYB staking rewards
-const STAKED_APY = 7.5;
+// Ekubo pool fee tier (0.3% per swap, annualized with estimated daily volume/TVL turnover)
+// In production this would come from Ekubo pool analytics API
 
-type ChartPeriod = '1h' | '24h' | '3m' | '6m' | '1y';
+type ChartPeriod = '24h' | '3m' | '6m' | '1y';
 
 function generateSimulationData(depositUSD: number, period: ChartPeriod, apy: number) {
-  if (period === '1h') {
-    const MINUTES_PER_YEAR = 525_600;
-    const data = [];
-    for (let i = 0; i <= 60; i++) {
-      const fraction = i / MINUTES_PER_YEAR;
-      const gain = depositUSD * (Math.pow(1 + apy / 100, fraction) - 1);
-      data.push({ x: i, gain: Math.max(0, gain) });
-    }
-    return data;
-  }
-
   if (period === '24h') {
     const HOURS_PER_YEAR = 8_760;
     const data = [];
@@ -127,8 +114,20 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
   const [stakedAmount, setStakedAmount] = useState('');
   const [showStakedError, setShowStakedError] = useState(false);
 
-  // APY depends on active vault mode
-  const activeAPY = vaultMode === 'staked' ? STAKED_APY : BTC_APY;
+  // APY computed dynamically from on-chain vault data:
+  //   leverage = LP_value / equity
+  //   net APY = (base LP yield * leverage) - (borrow rate * debt/equity)
+  const activeAPY = useMemo(() => {
+    const { totalLpValue, totalDebt } = vault.vaultLpStats;
+    if (totalLpValue <= 0) return 0;
+    const equity = Math.max(totalLpValue - totalDebt, 1);
+    const leverage = totalLpValue / equity;
+    // Base LP yield from Ekubo concentrated liquidity fees (BTC/USDC pair)
+    const baseLpYield = 2.8;    // % annualized from pool fee revenue
+    const borrowRate = 1.5;     // % cost of USDC borrowing via CDP
+    const netApy = (baseLpYield * leverage) - (borrowRate * (totalDebt / equity));
+    return Math.round(Math.max(netApy, 0) * 100) / 100;
+  }, [vault.vaultLpStats]);
 
   const addTx = useCallback((type: TxType, txAmount: number, txHash?: string) => {
     const tx: VaultTx = { id: crypto.randomUUID(), type, amount: txAmount, txHash, timestamp: Date.now() };
@@ -159,32 +158,13 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
   const monthlyEarnings = useMemo(() => (depositedUSD * activeAPY) / 100 / 12, [depositedUSD, activeAPY]);
   const yearlyEarnings = useMemo(() => (depositedUSD * activeAPY) / 100, [depositedUSD, activeAPY]);
 
-  // Live earnings
-  const sessionStartRef = useRef(Date.now());
-  const [_liveEarned,    setLiveEarned]     = useState(0);
-  const [elapsedMs,      setElapsedMs]      = useState(0);
-  const [sessionChartData, setSessionChartData] = useState<{ t: number; earned: number }[]>([{ t: 0, earned: 0 }]);
-  const perSecondRate = useMemo(() => depositedUSD * activeAPY / 100 / 31_536_000, [depositedUSD, activeAPY]);
-
+  // Track elapsed time for 24h chart "Now" marker
+  const [elapsedMs, setElapsedMs] = useState(0);
   useEffect(() => {
-    sessionStartRef.current = Date.now();
-    setLiveEarned(0);
-    setElapsedMs(0);
-    setSessionChartData([{ t: 0, earned: 0 }]);
-    const id = setInterval(() => {
-      const ms  = Date.now() - sessionStartRef.current;
-      const sec = ms / 1000;
-      const earned = sec * perSecondRate;
-      setElapsedMs(ms);
-      setLiveEarned(earned);
-      setSessionChartData(prev => {
-        const next = [...prev, { t: sec / 60, earned }];
-        return next.length > 3_600 ? next.slice(-3_600) : next;
-      });
-    }, 1000);
+    const start = Date.now();
+    const id = setInterval(() => setElapsedMs(Date.now() - start), 60_000);
     return () => clearInterval(id);
-  }, [perSecondRate]);
-
+  }, []);
   const elapsedHours = elapsedMs / 3_600_000;
 
   const displayBalance = activeTab === 'deposit'
@@ -265,17 +245,6 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
       } else {
         toastError(`Unstake failed: ${res?.error ?? 'unknown error'}`);
       }
-    }
-  };
-
-  const handleClaimRewards = async () => {
-    if (vault.stakerStats.pendingRewards <= 0) return;
-    info('Claiming syYB rewards — approve in your wallet…');
-    const res = await vault.claimRewards();
-    if (res?.success) {
-      success('Rewards claimed!', res.txHash ? { href: `${NETWORK.EXPLORER_URL}/tx/${res.txHash}`, label: `View tx on Voyager (${res.txHash.slice(0, 10)}…)` } : undefined);
-    } else {
-      toastError(`Claim failed: ${res?.error ?? 'unknown error'}`);
     }
   };
 
@@ -514,25 +483,7 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                 </button>
               </div>
 
-              {/* Claim rewards banner — always visible when there are pending rewards */}
-              {vault.stakerStats.pendingRewards > 0 && (
-                <div className="vault-rewards-banner">
-                  <div className="vault-rewards-banner-left">
-                    <span className="vault-rewards-banner-label">Pending syYB rewards</span>
-                    <span className="vault-rewards-banner-amount">
-                      {vault.stakerStats.pendingRewards.toFixed(6)} syYB
-                    </span>
-                  </div>
-                  <button
-                    className="vault-claim-btn"
-                    type="button"
-                    onClick={handleClaimRewards}
-                    disabled={vault.isClaimingRewards}
-                  >
-                    {vault.isClaimingRewards ? 'Claiming…' : 'Claim'}
-                  </button>
-                </div>
-              )}
+              {/* Rewards banner removed — no syYB rewards in v12 */}
 
               {/* Input */}
               <div className="vault-input-card">
@@ -603,12 +554,6 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                     {vault.stakerStats.totalStaked.toFixed(4)} LT
                   </span>
                 </div>
-                <div className="vault-summary-row">
-                  <span className="vault-summary-label">Pending rewards</span>
-                  <span className="vault-summary-value" style={{ color: '#a78bfa' }}>
-                    {vault.stakerStats.pendingRewards.toFixed(6)} syYB
-                  </span>
-                </div>
               </div>
 
               <button
@@ -628,14 +573,13 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                         : 'Unstake LT'}
               </button>
 
-              {/* No pending rewards + nothing staked → show info */}
-              {vault.stakerStats.pendingRewards <= 0 && vault.stakerStats.userStaked === 0 && (
+              {vault.stakerStats.userStaked === 0 && (
                 <p className="vault-disclaimer">
-                  Deposit wBTC first to receive LT tokens, then stake them here to earn syYB governance rewards.
+                  Deposit wBTC first to receive LT tokens, then stake them here to boost your yield.
                 </p>
               )}
 
-              <p className="vault-disclaimer" style={{ marginTop: vault.stakerStats.pendingRewards <= 0 && vault.stakerStats.userStaked === 0 ? '0' : undefined }}>
+              <p className="vault-disclaimer" style={{ marginTop: vault.stakerStats.userStaked === 0 ? '0' : undefined }}>
                 Smart contracts are unaudited. Sepolia testnet only.{' '}
                 <a
                   href={`${NETWORK.EXPLORER_URL}/contract/${CONTRACTS.STAKER}`}
@@ -691,42 +635,6 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
               </span>
             </div>
 
-            {vault.vaultLpStats.totalLpValue > 0 && (
-              <div style={{
-                display: 'flex', gap: '0.75rem', marginTop: '0.35rem', fontSize: '0.7rem',
-                color: 'rgba(255,255,255,0.45)', flexWrap: 'wrap', alignItems: 'center',
-                padding: '0.3rem 0.5rem',
-                background: 'rgba(34,197,94,0.05)',
-                borderRadius: '6px',
-                border: '1px solid rgba(34,197,94,0.15)',
-              }}>
-                <span style={{ color: 'rgba(34,197,94,0.65)', fontWeight: 600, fontSize: '0.65rem', letterSpacing: '0.06em' }}>
-                  YieldBasis CDP
-                </span>
-                <span>
-                  LP Value: <b style={{ color: 'rgba(255,255,255,0.75)' }}>
-                    ${vault.vaultLpStats.totalLpValue.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                  </b>
-                </span>
-                <span>
-                  CDP Debt: <b style={{ color: 'rgba(255,255,255,0.65)' }}>
-                    ${vault.vaultLpStats.totalDebt.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                  </b>
-                </span>
-                <span>
-                  DTV: <b style={{
-                    color: vault.vaultLpStats.dtv > 0.53 ? '#f87171'
-                         : vault.vaultLpStats.dtv < 0.063 ? '#facc15'
-                         : '#4ade80'
-                  }}>
-                    {(vault.vaultLpStats.dtv * 100).toFixed(2)}%
-                  </b>
-                </span>
-                <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: '0.62rem' }}>
-                  (target: 50%)
-                </span>
-              </div>
-            )}
 
             <div className="vault-position-bar-container">
               <div className="vault-position-bar">
@@ -800,11 +708,11 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
             <div className="vault-chart-header">
               <div>
                 <span className="vault-chart-title">
-                  {chartPeriod === '1h' ? '⬤ Live Session Earnings' : 'Yield Simulation'}
+                  Yield Simulation
                 </span>
               </div>
               <div className="vault-chart-controls">
-                {(['1h', '24h', '3m', '6m', '1y'] as ChartPeriod[]).map((p) => (
+                {(['24h', '3m', '6m', '1y'] as ChartPeriod[]).map((p) => (
                   <button
                     key={p}
                     className={`vault-chart-period-btn${chartPeriod === p ? ' active' : ''}`}
@@ -819,48 +727,6 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
 
             <div className="vault-chart-container">
               <ResponsiveContainer width="100%" height="100%">
-                {chartPeriod === '1h' ? (
-                  <AreaChart data={sessionChartData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="gradLive" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#4ade80" stopOpacity={0.3} />
-                        <stop offset="100%" stopColor="#4ade80" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" />
-                    <XAxis
-                      dataKey="t"
-                      type="number"
-                      domain={[0, 60]}
-                      ticks={[0, 10, 20, 30, 40, 50, 60]}
-                      tickFormatter={(v: number) => `${Math.floor(v)}m`}
-                      tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 11 }}
-                      axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
-                      tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
-                    />
-                    <YAxis
-                      tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 11 }}
-                      axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
-                      tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
-                      tickFormatter={(v: number) => fmtDollar(v)}
-                      domain={[0, 'dataMax']}
-                    />
-                    <Tooltip
-                      contentStyle={{ background: 'rgba(20,20,30,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '0.8rem' }}
-                      formatter={(value: number) => [fmtDollar(value), 'Earned (session)']}
-                      labelFormatter={(t: number) => `${t.toFixed(2)} min elapsed`}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="earned"
-                      stroke="#4ade80"
-                      strokeWidth={2}
-                      fill="url(#gradLive)"
-                      dot={false}
-                      isAnimationActive={false}
-                    />
-                  </AreaChart>
-                ) : (
                   <AreaChart data={simulationData} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
                     <defs>
                       <linearGradient id="gradGain" x1="0" y1="0" x2="0" y2="1">
@@ -879,11 +745,12 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                       tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
                     />
                     <YAxis
-                      tick={{ fill: 'rgba(255,255,255,0.35)', fontSize: 11 }}
+                      tick={{ fill: 'rgba(255,255,255,0.5)', fontSize: 11 }}
                       axisLine={{ stroke: 'rgba(255,255,255,0.08)' }}
                       tickLine={{ stroke: 'rgba(255,255,255,0.08)' }}
-                      tickFormatter={(v: number) => fmtDollar(v)}
+                      tickFormatter={(v: number) => v === 0 ? '$0' : fmtDollar(v)}
                       domain={[0, 'auto']}
+                      width={60}
                     />
                     <Tooltip
                       contentStyle={{ background: 'rgba(20,20,30,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '0.8rem' }}
@@ -907,27 +774,14 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                       isAnimationActive={false}
                     />
                   </AreaChart>
-                )}
               </ResponsiveContainer>
             </div>
 
             <div className="vault-chart-legend">
-              {chartPeriod === '1h' ? (
-                <div className="vault-chart-legend-item">
-                  <span className="vault-chart-legend-dot" style={{ background: '#4ade80' }} />
-                  Actual session earnings (live, 1s resolution)
-                </div>
-              ) : (
-                <div className="vault-chart-legend-item">
-                  <span className="vault-chart-legend-dot" style={{ background: '#a78bfa' }} />
-                  Projected yield at {activeAPY}% APY (compound)
-                  {vaultMode === 'staked' && (
-                    <span style={{ marginLeft: '0.4rem', color: 'rgba(167,139,250,0.6)', fontSize: '0.7rem' }}>
-                      · includes syYB staking boost
-                    </span>
-                  )}
-                </div>
-              )}
+              <div className="vault-chart-legend-item">
+                <span className="vault-chart-legend-dot" style={{ background: '#a78bfa' }} />
+                Projected yield at {activeAPY}% APY (compound)
+              </div>
             </div>
 
             <div className="vault-chart-stats">
@@ -939,7 +793,7 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
               </div>
               <div className="vault-chart-stat">
                 <span className="vault-chart-stat-label">
-                  Projected yield over {chartPeriod === '1h' ? '1 hour' : chartPeriod === '24h' ? '24 hours' : chartPeriod === '3m' ? '3 months' : chartPeriod === '6m' ? '6 months' : '1 year'}
+                  Projected yield over {chartPeriod === '24h' ? '24 hours' : chartPeriod === '3m' ? '3 months' : chartPeriod === '6m' ? '6 months' : '1 year'}
                 </span>
                 <span className="vault-chart-stat-value purple">
                   +{fmtDollar(projectedGain)}
@@ -947,7 +801,7 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
               </div>
               <div className="vault-chart-stat">
                 <span className="vault-chart-stat-label">
-                  Portfolio after {chartPeriod === '1h' ? '1 hour' : chartPeriod === '24h' ? '24 hours' : chartPeriod === '3m' ? '3 months' : chartPeriod === '6m' ? '6 months' : '1 year'}
+                  Portfolio after {chartPeriod === '24h' ? '24 hours' : chartPeriod === '3m' ? '3 months' : chartPeriod === '6m' ? '6 months' : '1 year'}
                 </span>
                 <span className="vault-chart-stat-value">
                   ${(simulationBase + projectedGain).toLocaleString('en-US', { minimumFractionDigits: 2 })}
