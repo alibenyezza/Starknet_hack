@@ -16,7 +16,7 @@
 
 ### Ce qui est deploye (Starknet Sepolia)
 - **v12** : VaultManager, LT Token, VirtualPool, MockEkubo, MockLending, BTC (8 dec), USDC (6 dec), EkuboLPWrapper, GaugeController v2
-- **v6** : LEVAMM, Staker, SyYbToken, Factory
+- **v6** : LEVAMM, Staker, SyToken, Factory
 
 ### Ce qui est code mais PAS encore compile / deploye
 - Rebalancing actif (P7) — `levamm.cairo`, `mock_ekubo.cairo`, `mock_lending.cairo`, `constants.cairo`
@@ -39,7 +39,7 @@
 
 ### 1.2 ~~Staker approve le mauvais token~~ ✅
 - **Fichiers** : `contracts/src/staker/staker.cairo` + `frontend/src/hooks/useVaultManager.ts`
-- **Fix** : Staker renomme `sy_btc_token` → `stake_token` (generique). Frontend modifie pour approve `LT_TOKEN` au lieu de `SY_BTC_TOKEN`. Deploy script `redeploy_staker_and_swap.sh` mis a jour. compliant : on stake LT (= ybBTC).
+- **Fix** : Staker renomme `sy_btc_token` → `stake_token` (generique). Frontend modifie pour approve `LT_TOKEN` au lieu de `SY_BTC_TOKEN`. Deploy script `redeploy_staker_and_swap.sh` mis a jour. On stake LT (vault share token).
 
 ### 1.3 ~~Interest accrual deconnecte~~ ✅
 - **Fichier** : `contracts/src/fees/fee_distributor.cairo`
@@ -205,7 +205,7 @@ Deja fait — `useVaultManager.ts` approve `LT_TOKEN` (pas `SY_BTC_TOKEN`).
 - [x] Bug de scaling decimal dans mock_ekubo.cairo — `get_lp_value()` additionnait BTC(8dec) et USDC(6dec) sans conversion. Corrige via `DECIMAL_BRIDGE`.
 - [x] RiskManager: signature mismatch — `check_withdrawal_limit()` alignee sur l'implementation reelle.
 - [x] Staker: get_reward_rate / set_reward_rate — Deja present dans le code.
-- [x] Staker: _mint_reward() silent return — Remplace par `assert(sy_yb != zero, 'SY token not set')`.
+- [x] Staker: _mint_reward() silent return — Remplace par `assert(sy != zero, 'SY token not set')`.
 - [x] FeeDistributor.claim_holder_fees() owner-only — Rendu permissionless. `harvest()` ajoutee.
 </details>
 
@@ -230,7 +230,7 @@ Deja fait — `useVaultManager.ts` approve `LT_TOKEN` (pas `SY_BTC_TOKEN`).
 - [x] Routing des fees autour des stakers.
 - [x] veSY fee claim.
 - [x] claim_holder_fees permissionless + harvest().
-- [x] Wiring deploy: Staker.set_sy_yb_token + LtToken.set_usdc_token dans deploy_all.sh.
+- [x] Wiring deploy: Staker.set_sy_token + LtToken.set_usdc_token dans deploy_all.sh.
 </details>
 
 <details>
@@ -305,7 +305,7 @@ Implementation dans `LEVAMM.swap()` → `_rebalance_cdp()` restaure DTV a ~50%.
 
 **Rename sySY → sy-WBTC, vesySY → veSyWBTC :**
 - [x] Frontend : `VaultPage.tsx` (7 occurrences), `constants.ts` (commentaire).
-- [x] Contrats (commentaires/docs) : `staker.cairo`, `sy_yb_token.cairo`, `voting_escrow.cairo`, `gauge_controller.cairo`, `liquidity_gauge.cairo`, `governance.cairo`, `constants.cairo`.
+- [x] Contrats (commentaires/docs) : `staker.cairo`, `sy_token.cairo`, `voting_escrow.cairo`, `gauge_controller.cairo`, `liquidity_gauge.cairo`, `governance.cairo`, `constants.cairo`.
 - [x] Deploy scripts : `deploy_v6.sh` (symbol `"sy-WBTC"`), `redeploy_staker_and_swap.sh`, `redeploy_v12.sh`.
 - [x] Note : le nom/symbole on-chain est passe au constructeur — pas hardcode. `deploy_all.sh` utilise deja l'adresse existante.
 </details>

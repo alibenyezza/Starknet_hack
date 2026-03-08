@@ -14,7 +14,7 @@ mod tests {
 
     const SCALE: u256 = 1_000000000000000000;
 
-    /// Deploy Staker with constructor(owner, stake_token, sy_yb_token, initial_reward_rate).
+    /// Deploy Staker with constructor(owner, stake_token, sy_token, initial_reward_rate).
     /// Token addresses set to zero for view-only tests.
     fn deploy_staker(owner: ContractAddress, initial_reward_rate: u256) -> IStakerDispatcher {
         let zero: ContractAddress = 0.try_into().unwrap();
@@ -22,7 +22,7 @@ mod tests {
         let calldata = array![
             owner.into(),                       // owner
             zero.into(),                        // stake_token (LT)
-            zero.into(),                        // sy_yb_token
+            zero.into(),                        // sy_token
             initial_reward_rate.low.into(),      // initial_reward_rate (u256 low)
             initial_reward_rate.high.into(),     // initial_reward_rate (u256 high)
         ];
@@ -134,30 +134,30 @@ mod tests {
     }
 
     // ═══════════════════════════════════════════════════════
-    // SET SY_YB_TOKEN (owner only)
+    // SET SY_TOKEN (owner only)
     // ═══════════════════════════════════════════════════════
 
     #[test]
-    fn test_set_sy_yb_token_owner() {
+    fn test_set_sy_token_owner() {
         let owner = test_address();
         let staker = deploy_staker(owner, 1_000_000_000_000);
 
         let new_token: ContractAddress = 0xABC.try_into().unwrap();
         start_cheat_caller_address(staker.contract_address, owner);
-        staker.set_sy_yb_token(new_token);
+        staker.set_sy_token(new_token);
         stop_cheat_caller_address(staker.contract_address);
         // No panic = success
     }
 
     #[test]
     #[should_panic(expected: 'Only owner')]
-    fn test_set_sy_yb_token_not_owner() {
+    fn test_set_sy_token_not_owner() {
         let owner = test_address();
         let staker = deploy_staker(owner, 1_000_000_000_000);
 
         let attacker: ContractAddress = 0x999.try_into().unwrap();
         start_cheat_caller_address(staker.contract_address, attacker);
-        staker.set_sy_yb_token(0xABC.try_into().unwrap());
+        staker.set_sy_token(0xABC.try_into().unwrap());
     }
 
     // ═══════════════════════════════════════════════════════

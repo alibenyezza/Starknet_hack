@@ -11,7 +11,7 @@ set -e
 
 ACC="sepolia"
 OWNER="0x2b34981d2405a91eb0683fd144707d6ba9b402c7df8f9d3aaa9e359ec628653"
-SY_YB="0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e"
+SY="0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e"
 
 # Already deployed
 WBTC="0x01299997532891f6cb0088b5c779138f98f29d5a03e23e9611fad7071dffd89b"
@@ -128,7 +128,7 @@ echo "[9/9] Deploying GaugeController (nonce=$NONCE)..."
 sncast --account "$ACC" \
     deploy --network sepolia \
     --class-hash "$GAUGE_CLASS" \
-    --arguments "$OWNER, $SY_YB" \
+    --arguments "$OWNER, $SY" \
     --nonce "$NONCE" \
     2>&1 | tee "$TMP"
 GAUGE=$(grep -oiP 'Contract Address:\s+\K0x[0-9a-fA-F]+' "$TMP")

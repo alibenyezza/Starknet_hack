@@ -5,7 +5,7 @@
 # PURPOSE:
 #   1. Redeploy Staker contract with new get_reward_rate() getter
 #   2. Call set_reward_rate(1e14) → ~52.56% APR for staked vault
-#   3. Transfer SyYbToken ownership to new Staker (so it can mint rewards)
+#   3. Transfer SyToken ownership to new Staker (so it can mint rewards)
 #   4. Execute swaps on LEVAMM to generate real accumulated_trading_fees
 #
 # Run from WSL Ubuntu:
@@ -28,7 +28,7 @@ OWNER_ADDRESS="0x2b34981d2405a91eb0683fd144707d6ba9b402c7df8f9d3aaa9e359ec628653
 
 # ── Existing contract addresses (from v6 / v12) ──
 LEVAMM_ADDRESS="0x0623647a3e0f7f7a7aa0061a692c4e64e916dd853e0d71624da95f4076fff4af"
-SY_YB_TOKEN="0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e"
+SY_TOKEN="0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e"
 SY_BTC_TOKEN="0x076cb4dadb2db9a95072ecffbb67a61076e642eced3d7f37361ff6f202018be3"
 LT_TOKEN="0x018a65f5987d06a1e6d537a50ed7c8e4ea5869722f0f3772551e25f81efd4406"
 OLD_STAKER="0x04620f57ef40e7e2293ca6d06153930697bcb88d173f1634ba5cff768acec273"
@@ -143,12 +143,12 @@ fi
 echo ""
 
 echo -e "${BLUE}[2/4] Deploying new Staker...${NC}"
-# Constructor: owner, stake_token (LT), sy_yb_token, initial_reward_rate (u256 = low, high)
+# Constructor: owner, stake_token (LT), sy_token, initial_reward_rate (u256 = low, high)
 # NOTE: stake_token should be LT_TOKEN address (not SY_BTC_TOKEN) for StarkYield staking
 sncast --account "$SNCAST_ACCOUNT" \
     deploy --network sepolia \
     --class-hash "$STAKER_CLASS" \
-    --arguments "$OWNER_ADDRESS, $LT_TOKEN, $SY_YB_TOKEN, $REWARD_RATE, 0" \
+    --arguments "$OWNER_ADDRESS, $LT_TOKEN, $SY_TOKEN, $REWARD_RATE, 0" \
     2>&1 | tee "$TMP" || true
 NEW_STAKER=$(get_address)
 DEPLOY_TX=$(get_tx_hash)
@@ -160,9 +160,9 @@ else
 fi
 echo ""
 
-# ── Step 2: Transfer SyYbToken ownership to new Staker ──────
-echo -e "${BLUE}[3/4] Transferring SyYbToken ownership to new Staker...${NC}"
-do_invoke "$SY_YB_TOKEN" "transfer_ownership" "SyYbToken.transfer_ownership → new Staker" "$NEW_STAKER"
+# ── Step 2: Transfer SyToken ownership to new Staker ──────
+echo -e "${BLUE}[3/4] Transferring SyToken ownership to new Staker...${NC}"
+do_invoke "$SY_TOKEN" "transfer_ownership" "SyToken.transfer_ownership → new Staker" "$NEW_STAKER"
 echo ""
 
 # ── Step 3: Execute swaps on LEVAMM to generate trading fees ──

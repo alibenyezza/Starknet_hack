@@ -19,7 +19,7 @@ OWNER="0x2b34981d2405a91eb0683fd144707d6ba9b402c7df8f9d3aaa9e359ec628653"
 # ── Existing v6 contracts (not redeployed) ───────────────────
 # LEVAMM is now redeployed (new storage: total_fees_generated, init_block for time-normalized APR)
 STAKER="0x04620f57ef40e7e2293ca6d06153930697bcb88d173f1634ba5cff768acec273"
-SY_YB_TOKEN="0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e"
+SY_TOKEN="0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e"
 
 # ── Existing v12 tokens (not redeployed) ─────────────────────
 WBTC="0x01299997532891f6cb0088b5c779138f98f29d5a03e23e9611fad7071dffd89b"
@@ -142,7 +142,7 @@ sleep 15
 echo "[9] Deploying GaugeController..."
 sncast --account "$ACC" deploy --network sepolia \
     --class-hash "$GAUGE_CLASS" \
-    --arguments "$OWNER, $SY_YB_TOKEN" \
+    --arguments "$OWNER, $SY_TOKEN" \
     2>&1 | tee "$TMP"
 GAUGE=$(grep -oiP 'Contract Address:\s+\K0x[0-9a-fA-F]+' "$TMP")
 echo "  => GAUGE: $GAUGE"
@@ -152,7 +152,7 @@ sleep 15
 echo "[10] Deploying VotingEscrow..."
 sncast --account "$ACC" deploy --network sepolia \
     --class-hash "$VOTING_ESCROW_CLASS" \
-    --arguments "$OWNER, $SY_YB_TOKEN" \
+    --arguments "$OWNER, $SY_TOKEN" \
     2>&1 | tee "$TMP"
 VOTING_ESCROW=$(grep -oiP 'Contract Address:\s+\K0x[0-9a-fA-F]+' "$TMP")
 echo "  => VOTING_ESCROW: $VOTING_ESCROW"
@@ -162,7 +162,7 @@ sleep 15
 echo "[11] Deploying LiquidityGauge..."
 sncast --account "$ACC" deploy --network sepolia \
     --class-hash "$LIQUIDITY_GAUGE_CLASS" \
-    --arguments "$OWNER, $LT, $SY_YB_TOKEN" \
+    --arguments "$OWNER, $LT, $SY_TOKEN" \
     2>&1 | tee "$TMP"
 LIQUIDITY_GAUGE=$(grep -oiP 'Contract Address:\s+\K0x[0-9a-fA-F]+' "$TMP")
 echo "  => LIQUIDITY_GAUGE: $LIQUIDITY_GAUGE"
@@ -226,10 +226,10 @@ sncast --account "$ACC" invoke --network sepolia \
     --arguments "$LENDING" 2>&1 | tee "$TMP" || true
 sleep 10
 
-echo "[Wire] Staker.set_sy_yb_token..."
+echo "[Wire] Staker.set_sy_token..."
 sncast --account "$ACC" invoke --network sepolia \
-    --contract-address "$STAKER" --function set_sy_yb_token \
-    --arguments "$SY_YB_TOKEN" 2>&1 | tee "$TMP" || true
+    --contract-address "$STAKER" --function set_sy_token \
+    --arguments "$SY_TOKEN" 2>&1 | tee "$TMP" || true
 sleep 10
 
 echo "[Wire] LtToken.set_usdc_token..."
@@ -292,6 +292,6 @@ echo "  LEVAMM:               '$LEVAMM',"
 echo ""
 echo "  // v6 contracts (unchanged)"
 echo "  STAKER:      '$STAKER',"
-echo "  SY_YB_TOKEN: '$SY_YB_TOKEN',"
+echo "  SY_TOKEN: '$SY_TOKEN',"
 echo ""
 echo "Copy the addresses above into frontend/src/config/constants.ts"

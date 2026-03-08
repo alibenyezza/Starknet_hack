@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# StarkYield v6 — Deploy: SyYbToken + Factory + LevAMM + Staker + VirtualPool
+# StarkYield v6 — Deploy: SyToken + Factory + LevAMM + Staker + VirtualPool
 # Usage (depuis WSL):
 #   cd /mnt/c/Users/byezz/Desktop/starknethackathon/nouveaupush_starknet/Starknet_hack/contracts
 #   bash ../scripts/deploy_v6.sh
@@ -54,22 +54,22 @@ echo -e "${BLUE}=== StarkYield v6 Deployment ===${NC}"
 echo ""
 
 # ============================================================
-# 1. SyYbToken
+# 1. SyToken
 # ============================================================
-echo -e "${GREEN}[1/5] Declaring SyYbToken...${NC}"
+echo -e "${GREEN}[1/5] Declaring SyToken...${NC}"
 sncast --account "$SNCAST_ACCOUNT" \
-    declare --network sepolia --contract-name SyYbToken \
+    declare --network sepolia --contract-name SyToken \
     2>&1 | tee "$TMP" || true
-SYYB_CLASS=$(get_class_hash); echo -e "${GREEN}class_hash: $SYYB_CLASS${NC}"
+SY_CLASS=$(get_class_hash); echo -e "${GREEN}class_hash: $SY_CLASS${NC}"
 sleep $WAIT_TIME
 
-echo -e "${GREEN}[1/5] Deploying SyYbToken...${NC}"
+echo -e "${GREEN}[1/5] Deploying SyToken...${NC}"
 sncast --account "$SNCAST_ACCOUNT" \
     deploy --network sepolia \
-    --class-hash "$SYYB_CLASS" \
+    --class-hash "$SY_CLASS" \
     --arguments "\"StarkYield SY\", \"sy-WBTC\", $OWNER_ADDRESS" \
     2>&1 | tee "$TMP" || true
-SYYB_ADDRESS=$(get_address); echo -e "${GREEN}SyYbToken: $SYYB_ADDRESS${NC}"
+SY_ADDRESS=$(get_address); echo -e "${GREEN}SyToken: $SY_ADDRESS${NC}"
 sleep $WAIT_TIME
 echo ""
 
@@ -125,7 +125,7 @@ echo ""
 
 # ============================================================
 # 4. Staker
-# constructor(owner, sy_btc_token, sy_yb_token, initial_reward_rate u256)
+# constructor(owner, sy_btc_token, sy_token, initial_reward_rate u256)
 # ============================================================
 echo -e "${GREEN}[4/5] Declaring Staker...${NC}"
 sncast --account "$SNCAST_ACCOUNT" \
@@ -138,15 +138,15 @@ echo -e "${GREEN}[4/5] Deploying Staker...${NC}"
 sncast --account "$SNCAST_ACCOUNT" \
     deploy --network sepolia \
     --class-hash "$STAKER_CLASS" \
-    --arguments "$OWNER_ADDRESS, $SYBTC_ADDRESS, $SYYB_ADDRESS, $REWARD_RATE" \
+    --arguments "$OWNER_ADDRESS, $SYBTC_ADDRESS, $SY_ADDRESS, $REWARD_RATE" \
     2>&1 | tee "$TMP" || true
 STAKER_ADDRESS=$(get_address); echo -e "${GREEN}Staker: $STAKER_ADDRESS${NC}"
 sleep $WAIT_TIME
 
-echo -e "${GREEN}[4b] SyYbToken → transfer_ownership → Staker...${NC}"
+echo -e "${GREEN}[4b] SyToken → transfer_ownership → Staker...${NC}"
 sncast --account "$SNCAST_ACCOUNT" \
     invoke --network sepolia \
-    --contract-address "$SYYB_ADDRESS" \
+    --contract-address "$SY_ADDRESS" \
     --function transfer_ownership \
     --arguments "$STAKER_ADDRESS" \
     2>&1 || true
@@ -183,7 +183,7 @@ echo -e "${BLUE}============================================${NC}"
 echo -e "${GREEN}    DEPLOYMENT v6 COMPLETE!${NC}"
 echo -e "${BLUE}============================================${NC}"
 echo ""
-echo -e "SyYbToken:   ${YELLOW}$SYYB_ADDRESS${NC}"
+echo -e "SyToken:   ${YELLOW}$SY_ADDRESS${NC}"
 echo -e "Factory:     ${YELLOW}$FACTORY_ADDRESS${NC}"
 echo -e "LevAMM:      ${YELLOW}$LEVAMM_ADDRESS${NC}"
 echo -e "Staker:      ${YELLOW}$STAKER_ADDRESS${NC}"
@@ -194,7 +194,7 @@ echo "  FACTORY:      '$FACTORY_ADDRESS',"
 echo "  LEVAMM:       '$LEVAMM_ADDRESS',"
 echo "  VIRTUAL_POOL: '$VPOOL_ADDRESS',"
 echo "  STAKER:       '$STAKER_ADDRESS',"
-echo "  SY_YB_TOKEN:  '$SYYB_ADDRESS',"
+echo "  SY_TOKEN:  '$SY_ADDRESS',"
 echo ""
 echo "Explorer:"
 echo "  https://sepolia.starkscan.co/contract/$LEVAMM_ADDRESS"

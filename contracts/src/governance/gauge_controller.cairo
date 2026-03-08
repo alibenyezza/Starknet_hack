@@ -31,7 +31,7 @@ pub mod GaugeController {
     #[storage]
     struct Storage {
         owner:         ContractAddress,
-        vesyyb_token:  ContractAddress,
+        vesy_token:  ContractAddress,
         gauge_weights: Map<ContractAddress, u256>,
         gauge_active:  Map<ContractAddress, bool>,
         total_weight:  u256,
@@ -56,10 +56,10 @@ pub mod GaugeController {
     fn constructor(
         ref self: ContractState,
         owner:        ContractAddress,
-        vesyyb_token: ContractAddress,
+        vesy_token: ContractAddress,
     ) {
         self.owner.write(owner);
-        self.vesyyb_token.write(vesyyb_token);
+        self.vesy_token.write(vesy_token);
     }
 
     #[abi(embed_v0)]
@@ -80,10 +80,10 @@ pub mod GaugeController {
             let caller = get_caller_address();
 
             // Bound weight to caller's veSyWBTC balance (skip if token not set)
-            let vesyyb = self.vesyyb_token.read();
+            let vesy = self.vesy_token.read();
             let zero: ContractAddress = 0.try_into().unwrap();
-            if vesyyb != zero {
-                let balance = IERC20BalanceDispatcher { contract_address: vesyyb }
+            if vesy != zero {
+                let balance = IERC20BalanceDispatcher { contract_address: vesy }
                     .balance_of(caller);
                 assert(weight <= balance, 'Weight exceeds veSyWBTC balance');
             }

@@ -2,7 +2,7 @@
 //!
 //! Users stake LT (vault share) tokens here instead of earning trading fees directly.
 //! In return they receive sy-WBTC governance tokens at a configurable rate.
-//! The Staker contract must own the SyYbToken to be able to mint rewards.
+//! The Staker contract must own the SyToken to be able to mint rewards.
 //!
 //! Staking LT shares to earn sy-WBTC emissions.
 
@@ -19,7 +19,7 @@ pub trait IStaker<TContractState> {
     fn get_acc_reward_per_share(self: @TContractState) -> u256;
     fn get_reward_rate(self: @TContractState) -> u256;
     fn set_reward_rate(ref self: TContractState, rate: u256);
-    fn set_sy_yb_token(ref self: TContractState, sy_yb: ContractAddress);
+    fn set_sy_token(ref self: TContractState, sy: ContractAddress);
     fn get_owner(self: @TContractState) -> ContractAddress;
     fn set_owner(ref self: TContractState, new_owner: ContractAddress);
 }
@@ -33,7 +33,7 @@ pub mod Staker {
         StoragePointerReadAccess, StoragePointerWriteAccess,
     };
     use starkyield::integrations::ierc20::{IERC20Dispatcher, IERC20DispatcherTrait};
-    use starkyield::governance::sy_yb_token::{ISyYbTokenDispatcher, ISyYbTokenDispatcherTrait};
+    use starkyield::governance::sy_token::{ISyTokenDispatcher, ISyTokenDispatcherTrait};
     use starkyield::utils::constants::Constants;
     use starkyield::utils::math::Math;
 
@@ -41,7 +41,7 @@ pub mod Staker {
     struct Storage {
         owner: ContractAddress,
         stake_token: ContractAddress,
-        sy_yb_token: ContractAddress,
+        sy_token: ContractAddress,
         total_staked: u256,
         reward_rate: u256,            // sy-WBTC minted per block per SCALE unit of staked syBTC
         last_reward_block: u64,
@@ -76,12 +76,12 @@ pub mod Staker {
         ref self: ContractState,
         owner: ContractAddress,
         stake_token: ContractAddress,
-        sy_yb_token: ContractAddress,
+        sy_token: ContractAddress,
         initial_reward_rate: u256,
     ) {
         self.owner.write(owner);
-        self.stake_token.write(sy_btc_token);
-        self.sy_yb_token.write(sy_yb_token);
+        self.stake_token.write(stake_token);
+        self.sy_token.write(sy_token);
         self.reward_rate.write(initial_reward_rate);
         self.last_reward_block.write(get_block_number());
         self.acc_reward_per_share.write(0);
@@ -200,9 +200,9 @@ pub mod Staker {
             self.emit(RewardRateSet { new_rate: rate });
         }
 
-        fn set_sy_yb_token(ref self: ContractState, sy_yb: ContractAddress) {
+        fn set_sy_token(ref self: ContractState, sy: ContractAddress) {
             assert(get_caller_address() == self.owner.read(), 'Only owner');
-            self.sy_yb_token.write(sy_yb);
+            self.sy_token.write(sy);
         }
 
         fn get_owner(self: @ContractState) -> ContractAddress { self.owner.read() }
@@ -240,13 +240,13 @@ pub mod Staker {
             if gross > debt { gross - debt } else { 0 }
         }
 
-        /// Mint sy-WBTC to a user (requires Staker to own SyYbToken)
+        /// Mint sy-WBTC to a user (requires Staker to own SyToken)
         fn _mint_reward(ref self: ContractState, to: ContractAddress, amount: u256) {
             if amount == 0 { return; }
-            let sy_yb = self.sy_yb_token.read();
+            let sy = self.sy_token.read();
             let zero: ContractAddress = 0_felt252.try_into().unwrap();
-            assert(sy_yb != zero, 'SY token not set');
-            ISyYbTokenDispatcher { contract_address: sy_yb }.mint(to, amount);
+            assert(sy != zero, 'SY token not set');
+            ISyTokenDispatcher { contract_address: sy }.mint(to, amount);
         }
     }
 }

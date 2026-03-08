@@ -8,14 +8,14 @@ use core::byte_array::ByteArray;
 use openzeppelin::token::erc20::{ERC20HooksEmptyImpl, DefaultConfig};
 
 #[starknet::interface]
-pub trait ISyYbToken<TContractState> {
+pub trait ISyToken<TContractState> {
     fn mint(ref self: TContractState, to: ContractAddress, amount: u256);
     fn burn(ref self: TContractState, from: ContractAddress, amount: u256);
 }
 
 #[starknet::contract]
-pub mod SyYbToken {
-    use super::{ISyYbToken, ContractAddress, ByteArray};
+pub mod SyToken {
+    use super::{ISyToken, ContractAddress, ByteArray};
     use openzeppelin::token::erc20::{ERC20Component, ERC20HooksEmptyImpl, DefaultConfig};
     use openzeppelin::access::ownable::OwnableComponent;
 
@@ -58,7 +58,7 @@ pub mod SyYbToken {
     }
 
     #[abi(embed_v0)]
-    impl SyYbTokenImpl of ISyYbToken<ContractState> {
+    impl SyTokenImpl of ISyToken<ContractState> {
         fn mint(ref self: ContractState, to: ContractAddress, amount: u256) {
             self.ownable.assert_only_owner();
             assert(amount > 0, 'Amount must be > 0');

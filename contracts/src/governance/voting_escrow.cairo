@@ -39,7 +39,7 @@ pub mod VotingEscrow {
     #[storage]
     struct Storage {
         owner: ContractAddress,
-        sy_yb_token: ContractAddress,
+        sy_token: ContractAddress,
         locked_balances: Map<ContractAddress, u256>,
         lock_end: Map<ContractAddress, u64>,
     }
@@ -62,9 +62,9 @@ pub mod VotingEscrow {
     struct Unlocked { user: ContractAddress, amount: u256 }
 
     #[constructor]
-    fn constructor(ref self: ContractState, owner: ContractAddress, sy_yb_token: ContractAddress) {
+    fn constructor(ref self: ContractState, owner: ContractAddress, sy_token: ContractAddress) {
         self.owner.write(owner);
-        self.sy_yb_token.write(sy_yb_token);
+        self.sy_token.write(sy_token);
     }
 
     #[abi(embed_v0)]
@@ -86,7 +86,7 @@ pub mod VotingEscrow {
             assert(existing == 0, 'Already locked, use increase');
 
             // Transfer sy-WBTC from user to this contract
-            let token = IERC20FacadeDispatcher { contract_address: self.sy_yb_token.read() };
+            let token = IERC20FacadeDispatcher { contract_address: self.sy_token.read() };
             let ok = token.transfer_from(user, get_contract_address(), amount);
             assert(ok, 'sy-WBTC transfer_from failed');
 
@@ -104,7 +104,7 @@ pub mod VotingEscrow {
             let lock_end = self.lock_end.read(user);
             assert(get_block_timestamp() < lock_end, 'Lock expired');
 
-            let token = IERC20FacadeDispatcher { contract_address: self.sy_yb_token.read() };
+            let token = IERC20FacadeDispatcher { contract_address: self.sy_token.read() };
             let ok = token.transfer_from(user, get_contract_address(), amount);
             assert(ok, 'sy-WBTC transfer_from failed');
 
@@ -127,7 +127,7 @@ pub mod VotingEscrow {
             self.lock_end.write(user, 0);
 
             // Transfer sy-WBTC back to user
-            let token = IERC20FacadeDispatcher { contract_address: self.sy_yb_token.read() };
+            let token = IERC20FacadeDispatcher { contract_address: self.sy_token.read() };
             token.transfer(user, locked);
 
             self.emit(Unlocked { user, amount: locked });

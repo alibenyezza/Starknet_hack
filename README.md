@@ -212,7 +212,7 @@ When share price drops below the all-time high, **100% of revenue** restores LP 
 | Contract | File | Description |
 |----------|------|-------------|
 | **Staker** | `staker/staker.cairo` | MasterChef: stake LT -> earn sy-WBTC emissions. Configurable reward_rate. Frontend provides multicall `depositAndStake` (deposit wBTC + stake in one tx). |
-| **SyYbToken** | `governance/sy_yb_token.cairo` | sy-WBTC governance token (ERC20, mintable by Staker). |
+| **SyToken** | `governance/sy_token.cairo` | sy-WBTC governance token (ERC20, mintable by Staker). |
 | **VotingEscrow** | `governance/voting_escrow.cairo` | Lock sy-WBTC -> veSyWBTC. Linear decay, 1 week to 4 year max lock. |
 | **GaugeController** | `governance/gauge_controller.cairo` | Gauge voting with veSyWBTC balance verification (v2 security). |
 | **LiquidityGauge** | `governance/liquidity_gauge.cairo` | MasterChef emission distribution per gauge. |
@@ -362,7 +362,7 @@ Starknet_hack/
 |   |   |   +-- staker.cairo                 # MasterChef: stake LT -> earn sy-WBTC
 |   |   |
 |   |   +-- governance/
-|   |   |   +-- sy_yb_token.cairo            # sy-WBTC governance token (ERC20)
+|   |   |   +-- sy_token.cairo            # sy-WBTC governance token (ERC20)
 |   |   |   +-- voting_escrow.cairo          # Lock sy-WBTC -> veSyWBTC (linear decay, 4yr max)
 |   |   |   +-- gauge_controller.cairo       # Gauge voting with veSyWBTC balance check (v2)
 |   |   |   +-- liquidity_gauge.cairo        # MasterChef emission distribution
@@ -470,7 +470,7 @@ Starknet_hack/
 |----------|---------|
 | LevAMM | `0x0623647a3e0f7f7a7aa0061a692c4e64e916dd853e0d71624da95f4076fff4af` |
 | Staker | `0x04620f57ef40e7e2293ca6d06153930697bcb88d173f1634ba5cff768acec273` |
-| SyYbToken (sy-WBTC) | `0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e` |
+| SyToken (sy-WBTC) | `0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e` |
 
 ---
 

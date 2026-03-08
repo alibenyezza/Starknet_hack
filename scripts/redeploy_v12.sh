@@ -28,10 +28,10 @@ NC='\033[0m'
 SNCAST_ACCOUNT="${SNCAST_ACCOUNT:-sepolia}"
 OWNER_ADDRESS="0x2b34981d2405a91eb0683fd144707d6ba9b402c7df8f9d3aaa9e359ec628653"
 
-# LevAMM + Staker + SyYB + SyBTC from v6 (unchanged, not redeployed)
+# LevAMM + Staker + SyToken + SyBTC from v6 (unchanged, not redeployed)
 LEVAMM_ADDRESS="0x0623647a3e0f7f7a7aa0061a692c4e64e916dd853e0d71624da95f4076fff4af"
 STAKER_ADDRESS="0x04620f57ef40e7e2293ca6d06153930697bcb88d173f1634ba5cff768acec273"
-SY_YB_TOKEN="0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e"
+SY_TOKEN="0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e"
 
 TMP=$(mktemp)
 
@@ -211,7 +211,7 @@ echo ""
 # ── Step 9: GaugeController ──────────────────────────────────────────────────
 echo -e "${BLUE}[9/9] GaugeController${NC}"
 GAUGE_CLASS=$(do_declare GaugeController "GaugeController")
-GAUGE_ADDRESS=$(do_deploy "$GAUGE_CLASS" "GaugeController" "$OWNER_ADDRESS, $SY_YB_TOKEN")
+GAUGE_ADDRESS=$(do_deploy "$GAUGE_CLASS" "GaugeController" "$OWNER_ADDRESS, $SY_TOKEN")
 echo -e "${GREEN}  => GaugeController: $GAUGE_ADDRESS${NC}"
 echo ""
 
@@ -266,7 +266,7 @@ export const CONTRACTS = {
   FACTORY:       '0x0253d30100bd7cbbc2bf146bdddcbb4adfc0cae0dc3d2a3ab172a1b4e21c8780',
   LEVAMM:        '$LEVAMM_ADDRESS',
   STAKER:        '$STAKER_ADDRESS',
-  SY_YB_TOKEN:   '$SY_YB_TOKEN',
+  SY_TOKEN:   '$SY_TOKEN',
   SY_BTC_TOKEN:  '0x076cb4dadb2db9a95072ecffbb67a61076e642eced3d7f37361ff6f202018be3',
 } as const;
 EOF

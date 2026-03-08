@@ -20,7 +20,7 @@ export const CONTRACTS = {
   // ── v6 (kept for reference / Staker / LevAMM UI) ─────────────────────────
   LEVAMM:        '0x0623647a3e0f7f7a7aa0061a692c4e64e916dd853e0d71624da95f4076fff4af',
   STAKER:        '0x04620f57ef40e7e2293ca6d06153930697bcb88d173f1634ba5cff768acec273',
-  SY_YB_TOKEN:   '0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e', // sy-WBTC token
+  SY_TOKEN:      '0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e', // sy-WBTC token
   SY_BTC_TOKEN:  '0x076cb4dadb2db9a95072ecffbb67a61076e642eced3d7f37361ff6f202018be3',
 } as const;
 

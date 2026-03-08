@@ -23,29 +23,29 @@ mod tests {
     // DEPLOY HELPERS
     // ═══════════════════════════════════════════════════════
 
-    /// Deploy VotingEscrow with constructor(owner, sy_yb_token).
+    /// Deploy VotingEscrow with constructor(owner, sy_token).
     fn deploy_voting_escrow(
         owner: ContractAddress,
-        sy_yb_token: ContractAddress,
+        sy_token: ContractAddress,
     ) -> IVotingEscrowDispatcher {
         let contract_class = declare("VotingEscrow").unwrap().contract_class();
         let calldata = array![
             owner.into(),       // owner
-            sy_yb_token.into(), // sy_yb_token
+            sy_token.into(), // sy_token
         ];
         let (contract_address, _) = contract_class.deploy(@calldata).unwrap();
         IVotingEscrowDispatcher { contract_address }
     }
 
-    /// Deploy GaugeController with constructor(owner, vesyyb_token).
+    /// Deploy GaugeController with constructor(owner, vesy_token).
     fn deploy_gauge_controller(
         owner: ContractAddress,
-        vesyyb_token: ContractAddress,
+        vesy_token: ContractAddress,
     ) -> IGaugeControllerDispatcher {
         let contract_class = declare("GaugeController").unwrap().contract_class();
         let calldata = array![
             owner.into(),        // owner
-            vesyyb_token.into(), // vesyyb_token
+            vesy_token.into(), // vesy_token
         ];
         let (contract_address, _) = contract_class.deploy(@calldata).unwrap();
         IGaugeControllerDispatcher { contract_address }
@@ -239,7 +239,7 @@ mod tests {
         start_cheat_caller_address(gc.contract_address, owner);
         gc.add_gauge(gauge, 1);
 
-        // Vote with 0 weight (vesyyb_token is zero → balance check skipped)
+        // Vote with 0 weight (vesy_token is zero → balance check skipped)
         gc.vote_for_gauge(gauge, 0);
         stop_cheat_caller_address(gc.contract_address);
 
@@ -272,7 +272,7 @@ mod tests {
     }
 
     // ═══════════════════════════════════════════════════════
-    // GAUGE CONTROLLER — VOTE (vesyyb_token = zero → skip balance check)
+    // GAUGE CONTROLLER — VOTE (vesy_token = zero → skip balance check)
     // ═══════════════════════════════════════════════════════
 
     #[test]
@@ -288,7 +288,7 @@ mod tests {
         gc.add_gauge(gauge, 1);
         stop_cheat_caller_address(gc.contract_address);
 
-        // Vote (vesyyb_token is zero → balance check is skipped)
+        // Vote (vesy_token is zero → balance check is skipped)
         let weight: u256 = 500 * SCALE;
         start_cheat_caller_address(gc.contract_address, voter);
         gc.vote_for_gauge(gauge, weight);

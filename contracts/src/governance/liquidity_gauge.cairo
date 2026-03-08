@@ -16,7 +16,7 @@ trait IERC20Facade<TContractState> {
 
 /// Minimal sy-WBTC mint facade
 #[starknet::interface]
-trait ISyYbMintFacade<TContractState> {
+trait ISyMintFacade<TContractState> {
     fn mint(ref self: TContractState, to: ContractAddress, amount: u256);
 }
 
@@ -26,7 +26,7 @@ pub trait ILiquidityGauge<TContractState> {
     fn withdraw(ref self: TContractState, amount: u256);
     fn claim_rewards(ref self: TContractState) -> u256;
     fn get_claimable_rewards(self: @TContractState, user: ContractAddress) -> u256;
-    fn notify_reward(ref self: TContractState, sy_yb_amount: u256);
+    fn notify_reward(ref self: TContractState, sy_amount: u256);
     fn get_total_staked(self: @TContractState) -> u256;
     fn get_staked_balance(self: @TContractState, user: ContractAddress) -> u256;
 }
@@ -36,7 +36,7 @@ pub mod LiquidityGauge {
     use super::{
         ILiquidityGauge, ContractAddress,
         IERC20FacadeDispatcher, IERC20FacadeDispatcherTrait,
-        ISyYbMintFacadeDispatcher, ISyYbMintFacadeDispatcherTrait,
+        ISyMintFacadeDispatcher, ISyMintFacadeDispatcherTrait,
     };
     use starknet::{get_caller_address, get_contract_address};
     use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess, StoragePointerWriteAccess};
@@ -47,7 +47,7 @@ pub mod LiquidityGauge {
     struct Storage {
         owner: ContractAddress,
         lt_token: ContractAddress,
-        sy_yb_token: ContractAddress,
+        sy_token: ContractAddress,
         staked_balances: Map<ContractAddress, u256>,
         total_staked: u256,
         // MasterChef accumulated reward per share (1e18-scaled)
@@ -84,11 +84,11 @@ pub mod LiquidityGauge {
         ref self: ContractState,
         owner: ContractAddress,
         lt_token: ContractAddress,
-        sy_yb_token: ContractAddress,
+        sy_token: ContractAddress,
     ) {
         self.owner.write(owner);
         self.lt_token.write(lt_token);
-        self.sy_yb_token.write(sy_yb_token);
+        self.sy_token.write(sy_token);
     }
 
     #[abi(embed_v0)]
@@ -173,18 +173,18 @@ pub mod LiquidityGauge {
         /// Notify new sy-WBTC rewards available. Called by emission controller.
         /// Distributes rewards instantly across all current stakers by updating
         /// acc_reward_per_share. If no stakers, rewards are held in pool.
-        fn notify_reward(ref self: ContractState, sy_yb_amount: u256) {
-            if sy_yb_amount == 0 { return; }
+        fn notify_reward(ref self: ContractState, sy_amount: u256) {
+            if sy_amount == 0 { return; }
             let total = self.total_staked.read();
             if total > 0 {
                 // Distribute: increase acc_reward_per_share
-                let addition = sy_yb_amount * SCALE / total;
+                let addition = sy_amount * SCALE / total;
                 self.acc_reward_per_share.write(self.acc_reward_per_share.read() + addition);
             } else {
                 // No stakers — hold rewards for when someone deposits
-                self.pending_rewards_pool.write(self.pending_rewards_pool.read() + sy_yb_amount);
+                self.pending_rewards_pool.write(self.pending_rewards_pool.read() + sy_amount);
             }
-            self.emit(RewardNotified { amount: sy_yb_amount });
+            self.emit(RewardNotified { amount: sy_amount });
         }
 
         fn get_total_staked(self: @ContractState) -> u256 {
@@ -209,10 +209,10 @@ pub mod LiquidityGauge {
         /// Mint sy-WBTC reward to user (gauge must own sy-WBTC minting rights).
         fn _pay_reward(ref self: ContractState, to: ContractAddress, amount: u256) {
             if amount == 0 { return; }
-            let sy_yb = self.sy_yb_token.read();
+            let sy = self.sy_token.read();
             let zero: ContractAddress = 0.try_into().unwrap();
-            if sy_yb == zero { return; }
-            ISyYbMintFacadeDispatcher { contract_address: sy_yb }.mint(to, amount);
+            if sy == zero { return; }
+            ISyMintFacadeDispatcher { contract_address: sy }.mint(to, amount);
         }
     }
 }
