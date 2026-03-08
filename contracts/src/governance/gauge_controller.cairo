@@ -1,13 +1,13 @@
-//! GaugeController — Controls emission weights per gauge, voted by vesyYB holders.
+//! GaugeController — Controls emission weights per gauge, voted by veSyWBTC holders.
 //!
 //! Security fixes (v2):
-//!   - vote_for_gauge() checks caller's vesyYB balance (weight <= balance)
+//!   - vote_for_gauge() checks caller's veSyWBTC balance (weight <= balance)
 //!   - Per-voter, per-gauge weight tracking prevents double-voting
 //!   - total_weight correctly updated (old voter weight removed, new added)
 
 use starknet::ContractAddress;
 
-/// Minimal ERC-20 balance query (for vesyYB token)
+/// Minimal ERC-20 balance query (for veSyWBTC token)
 #[starknet::interface]
 trait IERC20Balance<TContractState> {
     fn balance_of(self: @TContractState, account: ContractAddress) -> u256;
@@ -72,20 +72,20 @@ pub mod GaugeController {
 
         /// Vote for a gauge with a given weight.
         ///
-        /// Security: weight is bounded by the caller's vesyYB balance.
+        /// Security: weight is bounded by the caller's veSyWBTC balance.
         /// Previous vote by this caller for this gauge is retracted first.
         fn vote_for_gauge(ref self: ContractState, gauge: ContractAddress, weight: u256) {
             assert(self.gauge_active.read(gauge), 'Gauge not active');
 
             let caller = get_caller_address();
 
-            // Bound weight to caller's vesyYB balance (skip if token not set)
+            // Bound weight to caller's veSyWBTC balance (skip if token not set)
             let vesyyb = self.vesyyb_token.read();
             let zero: ContractAddress = 0.try_into().unwrap();
             if vesyyb != zero {
                 let balance = IERC20BalanceDispatcher { contract_address: vesyyb }
                     .balance_of(caller);
-                assert(weight <= balance, 'Weight exceeds vesyYB balance');
+                assert(weight <= balance, 'Weight exceeds veSyWBTC balance');
             }
 
             // Retract caller's previous vote for this gauge

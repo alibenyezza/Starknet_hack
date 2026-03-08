@@ -1,9 +1,9 @@
 use starkyield::utils::constants::Constants;
 use starkyield::utils::math::Math;
 
-/// IL Eliminator — YieldBasis monitoring module
+/// IL Eliminator — StarkYield monitoring module
 ///
-/// In YieldBasis, IL is structurally eliminated because the LP position is matched
+/// In StarkYield, IL is structurally eliminated because the LP position is matched
 /// 1:1 by a USDC CDP debt. This module is retained for monitoring and analytics only.
 /// No active rebalancing is performed here; VirtualPool handles rebalancing externally.
 ///

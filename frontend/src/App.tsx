@@ -17,14 +17,17 @@ import { FileTextIcon } from '@/components/ui/icons/FileTextIcon';
 import { HomeIcon } from '@/components/ui/icons/HomeIcon';
 import { SwapIcon } from '@/components/ui/icons/SwapIcon';
 import { UserIcon } from '@/components/ui/icons/UserIcon';
+import { DropletIcon } from '@/components/ui/icons/DropletIcon';
 import StarBorder from '@/components/ui/StarBorder';
 import clsx from 'clsx';
+import { CONTRACTS } from '@/config/constants';
 
 // Import local logo files
 import cairoLogo from '@/assets/Cairo_logo_500x500.svg';
 import starknetLogo from '@/assets/SN-Stacked-Gradient - On dark bg.svg';
 import vesuLogo from '@/assets/vesu logo 1.svg';
 import starkLogo from '@/assets/logo stark vf.svg';
+import pragmaLogo from '@/assets/transparent_icon.svg';
 
 type Page = 'home' | 'vault' | 'swap' | 'docs' | 'team';
 
@@ -53,11 +56,24 @@ const partnerLogos = [
     title: 'Cairo Lang',
     href: 'https://www.cairo-lang.org',
   },
+  {
+    node: (
+      <img
+        src={pragmaLogo}
+        alt="Pragma"
+        title="Pragma Oracle"
+        style={{ height: 80, width: 'auto', marginLeft: -40 }}
+        draggable={false}
+      />
+    ),
+    title: 'Pragma Oracle',
+    href: 'https://www.pragma.build',
+  },
 ];
 
 function App() {
-  const { isConnected } = useAccount();
-  const { toasts, removeToast } = useToast();
+  const { isConnected, account } = useAccount();
+  const { toasts, removeToast, success, error: toastError } = useToast();
   const [isLoading, setIsLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState<Page>('home');
   const [isWalletModalOpen, setIsWalletModalOpen] = useState(false);
@@ -102,6 +118,44 @@ function App() {
       ariaLabel: 'Meet the StarkYield team',
       onClick: () => setCurrentPage('team'),
       icon: <UserIcon size={22} />,
+    },
+    {
+      label: 'Faucet',
+      ariaLabel: 'Mint 1 wBTC from faucet',
+      onClick: async () => {
+        if (!isConnected || !account) {
+          setIsWalletModalOpen(true);
+          return;
+        }
+        try {
+          const ONE_BTC = BigInt(1) * BigInt(10 ** 8);
+          const low = (ONE_BTC & ((1n << 128n) - 1n)).toString();
+          const high = (ONE_BTC >> 128n).toString();
+          const res = await account.execute([{
+            contractAddress: CONTRACTS.BTC_TOKEN,
+            entrypoint: 'faucet',
+            calldata: [low, high],
+          }]);
+          // Persist to same localStorage as VaultPage transactions
+          const TX_KEY = 'starkyield_vault_txs';
+          const tx = {
+            id: crypto.randomUUID(),
+            type: 'faucet',
+            amount: 1,
+            txHash: res?.transaction_hash,
+            timestamp: Date.now(),
+          };
+          try {
+            const existing = JSON.parse(localStorage.getItem(TX_KEY) || '[]');
+            localStorage.setItem(TX_KEY, JSON.stringify([tx, ...existing]));
+          } catch { /* ignore */ }
+          window.dispatchEvent(new Event('starkyield_tx_added'));
+          success('1 wBTC minted to your wallet!');
+        } catch (e: unknown) {
+          toastError(`Faucet failed: ${e instanceof Error ? e.message : 'unknown error'}`);
+        }
+      },
+      icon: <DropletIcon size={22} />,
     },
   ];
 

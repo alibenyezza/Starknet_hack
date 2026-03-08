@@ -1,8 +1,8 @@
-# CHANGEMENTS — StarkYield → YieldBasis sur Starknet
+# CHANGEMENTS — StarkYield v2 sur Starknet
 
 ## Objectif
 
-Transposer le protocole YieldBasis (Curve/Ethereum) sur Starknet en reutilisant l'infrastructure existante de StarkYield. Le changement fondamental est le **flow de depot** : passer d'un split 50/50 (LP + leverage separes) a un flow atomique ou **100% du BTC va en LP** et le levier vient d'un **CDP contre le LP token**.
+Implementer le modele de fees StarkYield sur Starknet en reutilisant l'infrastructure existante. Le changement fondamental est le **flow de depot** : passer d'un split 50/50 (LP + leverage separes) a un flow atomique ou **100% du BTC va en LP** et le levier vient d'un **CDP contre le LP token**.
 
 ---
 
@@ -15,7 +15,7 @@ User depose 1 BTC
       └─ 0.5 BTC → Vesu (collateral BTC → borrow USDC → swap → re-collateral)
 ```
 
-## Flow cible (YieldBasis)
+## Flow cible (StarkYield v2)
 
 ```
 User depose 1 BTC ($100k)
@@ -114,7 +114,7 @@ fn flash_loan(ref self: ContractState, amount: u256, callback_data: felt252) {
 }
 ```
 
-- Fee-less (0% de frais) — c'est le principe cle de YieldBasis
+- Fee-less (0% de frais) — c'est le principe cle de StarkYield
 - Utilise pour les depots, retraits ET le reequilibrage
 - La VirtualPool doit avoir une reserve de USDC ou pouvoir en minter via le CDP
 
@@ -200,7 +200,7 @@ Modifier :
 
 Ajouter :
 - `get_lp_price(lp_value, btc_price) -> u256` : oracle pour le pricing du LP
-- Equivalent du `CryptopoolLPOracle.vy` de YieldBasis
+- Equivalent du `CryptopoolLPOracle.vy`
 - Formule : prix LP = f(btc_price, reserves_btc, reserves_usdc, total_supply_lp)
 
 ---
@@ -222,7 +222,7 @@ Trading fees de la pool Ekubo
        ├─ Soustraire volatility decay (cout du reequilibrage)
        └─ Reste distribue :
             ├─ (1 - f_a) → holders de LT non stakes
-            └─ f_a → holders de vesyYB (governance)
+            └─ f_a → holders de vesySY (governance)
 ```
 
 **Formule admin fee dynamique :**
@@ -235,7 +235,7 @@ f_a = 1 - (1 - f_min) * sqrt(1 - s/T)
 - `s` = LT stakes (dans LiquidityGauge)
 - `f_min` = 10% (minimum, configurable par governance)
 - `s = 0` → `f_a = 10%` (90% aux LT holders)
-- `s = T` → `f_a = 100%` (tout aux vesyYB)
+- `s = T` → `f_a = 100%` (tout aux vesySY)
 
 **Recycling des interets d'emprunt :**
 
@@ -265,11 +265,10 @@ Ajouter une fonction `distribute_borrower_fees()` :
 - Sa valeur suit le prix du BTC 1:1 (grace au levier 2x)
 - Ajouter la distribution de fees aux holders (pro-rata)
 
-### syYB → YB (Governance Token)
+### sySY (Governance Token)
 
-- Renommer `sy_yb_token.cairo` en `yb_token.cairo` (optionnel)
-- Distribue aux stakers de LT via le LiquidityGauge
-- Lockable dans VotingEscrow pour vesyYB (voting power)
+- Governance token distribue aux stakers de LT via le LiquidityGauge
+- Lockable dans VotingEscrow pour vesySY (voting power)
 
 ---
 
@@ -278,24 +277,24 @@ Ajouter une fonction `distribute_borrower_fees()` :
 ### voting_escrow.cairo
 
 Implementer :
-- `lock(amount, duration)` : locker YB pour 1 semaine a 4 ans → recevoir vesyYB
+- `lock(amount, duration)` : locker sySY pour 1 semaine a 4 ans → recevoir vesySY
 - Voting power decroissant lineairement avec le temps
 - `withdraw()` : recuperer YB apres expiration du lock
 
 ### gauge_controller.cairo
 
 Implementer :
-- `vote_for_gauge(gauge_id, weight)` : voter pour allouer les emissions YB
+- `vote_for_gauge(gauge_id, weight)` : voter pour allouer les emissions sySY
 - `get_gauge_weight(gauge_id) -> u256` : poids du gauge
 - `checkpoint()` : mettre a jour les poids
 
 ### liquidity_gauge.cairo
 
 Implementer :
-- ERC4626 vault : staker LT → recevoir YB emissions proportionnelles au poids du gauge
+- ERC4626 vault : staker LT → recevoir sySY emissions proportionnelles au poids du gauge
 - `deposit(lt_amount)` : staker LT
 - `withdraw(lt_amount)` : unstaker
-- `claim_rewards()` : reclamer les YB accumules
+- `claim_rewards()` : reclamer les sySY accumules
 
 ---
 
@@ -326,11 +325,11 @@ Calcule l'IL avec `IL = 1 - 2*sqrt(r)/(1+r)` et ajuste le levier.
 
 ### A changer
 
-Dans le flow YieldBasis, l'IL est eliminee **structurellement** par le levier 2x. Ce contrat devient du monitoring pur (pas de logique active). Le reequilibrage est pilote par le **DTV du CDP** via la VirtualPool, pas par un calcul d'IL.
+Dans le flow StarkYield, l'IL est eliminee **structurellement** par le levier 2x. Ce contrat devient du monitoring pur (pas de logique active). Le reequilibrage est pilote par le **DTV du CDP** via la VirtualPool, pas par un calcul d'IL.
 
 ---
 
-## 11. constants.cairo — Ajouter les constantes YieldBasis
+## 11. constants.cairo — Ajouter les constantes StarkYield
 
 ```cairo
 // Fee structure
@@ -425,7 +424,7 @@ FEES :
     → 50% deepening pool
     → 50% distribues (apres volatility decay)
         → (1 - f_a) holders LT
-        → f_a vesyYB holders
+        → f_a vesySY holders
 
 INTERETS :
   Interets CDP accumules

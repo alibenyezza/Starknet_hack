@@ -1,4 +1,4 @@
-//! syYB Token - Governance token for StarkYield protocol
+//! sy-WBTC Token - Governance token for StarkYield protocol
 //!
 //! ERC-20 governance token distributed to syBTC stakers.
 //! Identical structure to SyBtcToken — owner (Staker contract) can mint/burn.

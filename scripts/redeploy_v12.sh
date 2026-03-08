@@ -1,12 +1,12 @@
 #!/bin/bash
 # ============================================================
-# YieldBasis v12 — Full redeploy (decimal fix + new contracts)
+# StarkYield v12 — Full redeploy (decimal fix + new contracts)
 #
 # WHY: MockWBTC → 8 decimals, MockUSDC → 6 decimals
 #      VirtualPool rewritten (reserves-based, no more faucet mint)
 #      VaultManager v11 (pause + risk_manager)
 #      NEW: EkuboLPWrapper (Bunni-inspired ERC20 LP wrapper)
-#      GaugeController security fix (vesyYB balance check)
+#      GaugeController security fix (veSyWBTC balance check)
 #
 # REDEPLOYED: ALL contracts (decimal change propagates everywhere)
 #
@@ -135,13 +135,13 @@ do_deploy() {
 }
 
 echo -e "${BLUE}============================================================${NC}"
-echo -e "${BLUE}      YieldBasis v12 — Full Redeploy (decimal fix)${NC}"
+echo -e "${BLUE}      StarkYield v12 — Full Redeploy (decimal fix)${NC}"
 echo -e "${BLUE}============================================================${NC}"
 echo -e "${CYAN}Fix: MockWBTC → 8 decimals, MockUSDC → 6 decimals${NC}"
 echo -e "${CYAN}Fix: VirtualPool reserves-based (no faucet mint)${NC}"
 echo -e "${CYAN}Fix: VaultManager pause + RiskManager${NC}"
 echo -e "${CYAN}New: EkuboLPWrapper (Bunni-inspired ERC20)${NC}"
-echo -e "${CYAN}Fix: GaugeController security (vesyYB balance check)${NC}"
+echo -e "${CYAN}Fix: GaugeController security (veSyWBTC balance check)${NC}"
 echo ""
 
 # ── Step 0: Build ─────────────────────────────────────────────────────────────
@@ -183,7 +183,7 @@ echo ""
 # ── Step 5: LtToken ──────────────────────────────────────────────────────────
 echo -e "${BLUE}[5/9] LtToken${NC}"
 LT_CLASS=$(do_declare LtToken "LtToken")
-LT_ADDRESS=$(do_deploy "$LT_CLASS" "LtToken" "\"YieldBasis LT\", \"LT\", $OWNER_ADDRESS")
+LT_ADDRESS=$(do_deploy "$LT_CLASS" "LtToken" "\"StarkYield LT\", \"LT\", $OWNER_ADDRESS")
 echo -e "${GREEN}  => LtToken: $LT_ADDRESS${NC}"
 echo ""
 

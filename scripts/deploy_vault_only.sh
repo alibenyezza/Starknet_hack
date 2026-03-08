@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# YieldBasis v7 — Deploy VaultManager only (all others done)
+# StarkYield v7 — Deploy VaultManager only (all others done)
 #
 # Already deployed:
 #   MockEkuboAdapter:   0x01f46c9c60dca701db51acfdbd17279145f56446d979ec93d1c63a564b18e1a5
@@ -52,7 +52,7 @@ get_address() {
     || echo ""
 }
 
-echo -e "${BLUE}=== YieldBasis v7 — VaultManager deploy ===${NC}"
+echo -e "${BLUE}=== StarkYield v7 — VaultManager deploy ===${NC}"
 echo ""
 
 # ============================================================

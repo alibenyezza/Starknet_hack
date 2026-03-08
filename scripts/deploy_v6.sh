@@ -67,7 +67,7 @@ echo -e "${GREEN}[1/5] Deploying SyYbToken...${NC}"
 sncast --account "$SNCAST_ACCOUNT" \
     deploy --network sepolia \
     --class-hash "$SYYB_CLASS" \
-    --arguments "\"StarkYield YB\", \"syYB\", $OWNER_ADDRESS" \
+    --arguments "\"StarkYield SY\", \"sy-WBTC\", $OWNER_ADDRESS" \
     2>&1 | tee "$TMP" || true
 SYYB_ADDRESS=$(get_address); echo -e "${GREEN}SyYbToken: $SYYB_ADDRESS${NC}"
 sleep $WAIT_TIME

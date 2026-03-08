@@ -1,15 +1,17 @@
-//! Vault Manager — YieldBasis v11 (pause + RiskManager wired)
+//! Vault Manager — StarkYield v12
 //!
 //! Deposit:  flash_loan(usdc) → add_liquidity(BTC+USDC→LP) → deposit_collateral_lp
 //!           → borrow_usdc → repay_flash_loan → mint LT
 //!
-//! Withdraw: flash_loan(debt) → repay_usdc → withdraw_collateral_lp → remove_liquidity
-//!           → repay_flash_loan → burn LT → send BTC
+//! Withdraw: [risk_check] → [accrue_interest] → flash_loan(debt) → repay_usdc
+//!           → withdraw_collateral_lp → remove_liquidity → repay_flash_loan → burn LT → send BTC
 //!
-//! New in v11:
+//! v12 features:
 //!   - paused: bool — owner can pause/unpause all deposits + withdrawals
-//!   - risk_manager: ContractAddress — health check before every withdrawal
-//!   - constructor accepts risk_manager (pass zero address to skip checks)
+//!   - risk_manager: health + daily withdrawal limit check before every withdrawal
+//!   - fee_distributor + levamm: wired for fee collection and interest accrual
+//!   - high_watermark: tracks ATH share price for recovery mode
+//!   - collect_fees(): permissionless fee harvesting via LEVAMM
 
 use starknet::ContractAddress;
 
@@ -57,7 +59,28 @@ trait IVirtualPoolFacade<TContractState> {
 /// RiskManager: health check before withdrawal
 #[starknet::interface]
 trait IRiskManager<TContractState> {
-    fn check_withdrawal_limit(self: @TContractState, shares: u256, total_shares: u256) -> bool;
+    fn check_withdrawal_limit(self: @TContractState, amount: u256) -> bool;
+    fn record_withdrawal(ref self: TContractState, amount: u256);
+}
+
+/// LEVAMM facade: notify of position changes
+#[starknet::interface]
+trait ILevAMMFacade<TContractState> {
+    fn accrue_interest(ref self: TContractState);
+    fn collect_fees(ref self: TContractState) -> u256;
+}
+
+/// FeeDistributor facade
+#[starknet::interface]
+trait IFeeDistributorFacade<TContractState> {
+    fn distribute(ref self: TContractState, dist_amount: u256);
+    fn harvest(ref self: TContractState);
+}
+
+/// PragmaAdapter facade: price staleness check
+#[starknet::interface]
+trait IPragmaFacade<TContractState> {
+    fn is_price_stale(self: @TContractState) -> bool;
 }
 
 // ── Public interface ─────────────────────────────────────────────────────────
@@ -66,42 +89,54 @@ trait IRiskManager<TContractState> {
 pub trait IVaultManager<TContractState> {
     fn deposit(ref self: TContractState, amount: u256) -> u256;
     fn withdraw(ref self: TContractState, shares: u256) -> u256;
+    fn collect_fees(ref self: TContractState) -> u256;
     fn get_user_shares(self: @TContractState, user: ContractAddress) -> u256;
     fn get_total_shares(self: @TContractState) -> u256;
     fn get_total_debt(self: @TContractState) -> u256;
     fn pause(ref self: TContractState);
     fn unpause(ref self: TContractState);
     fn is_paused(self: @TContractState) -> bool;
+    fn set_fee_distributor(ref self: TContractState, addr: ContractAddress);
+    fn set_levamm(ref self: TContractState, addr: ContractAddress);
+    fn set_pragma_adapter(ref self: TContractState, addr: ContractAddress);
 }
 
 #[starknet::contract]
 pub mod VaultManager {
     use super::{
         IVaultManager, ContractAddress,
-        IERC20MinDispatcher,           IERC20MinDispatcherTrait,
-        ILtMinDispatcher,              ILtMinDispatcherTrait,
-        IEkuboFacadeDispatcher,        IEkuboFacadeDispatcherTrait,
-        ILendingFacadeDispatcher,      ILendingFacadeDispatcherTrait,
-        IVirtualPoolFacadeDispatcher,  IVirtualPoolFacadeDispatcherTrait,
-        IRiskManagerDispatcher,        IRiskManagerDispatcherTrait,
+        IERC20MinDispatcher,              IERC20MinDispatcherTrait,
+        ILtMinDispatcher,                 ILtMinDispatcherTrait,
+        IEkuboFacadeDispatcher,           IEkuboFacadeDispatcherTrait,
+        ILendingFacadeDispatcher,         ILendingFacadeDispatcherTrait,
+        IVirtualPoolFacadeDispatcher,     IVirtualPoolFacadeDispatcherTrait,
+        IRiskManagerDispatcher,           IRiskManagerDispatcherTrait,
+        ILevAMMFacadeDispatcher,          ILevAMMFacadeDispatcherTrait,
+        IFeeDistributorFacadeDispatcher,  IFeeDistributorFacadeDispatcherTrait,
+        IPragmaFacadeDispatcher,          IPragmaFacadeDispatcherTrait,
     };
     use starknet::{get_caller_address, get_contract_address};
     use starknet::storage::Map;
 
     #[storage]
     struct Storage {
-        btc_token:       ContractAddress,
-        usdc_token:      ContractAddress,
-        lt_token:        ContractAddress,
-        ekubo_adapter:   ContractAddress,
-        lending_adapter: ContractAddress,
-        virtual_pool:    ContractAddress,
-        risk_manager:    ContractAddress,
-        owner:           ContractAddress,
-        total_shares:    u256,
-        user_shares:     Map<ContractAddress, u256>,
-        total_debt:      u256,
-        paused:          bool,
+        btc_token:         ContractAddress,
+        usdc_token:        ContractAddress,
+        lt_token:          ContractAddress,
+        ekubo_adapter:     ContractAddress,
+        lending_adapter:   ContractAddress,
+        virtual_pool:      ContractAddress,
+        risk_manager:      ContractAddress,
+        fee_distributor:   ContractAddress,
+        levamm:            ContractAddress,
+        pragma_adapter:    ContractAddress,
+        owner:             ContractAddress,
+        total_shares:      u256,
+        user_shares:       Map<ContractAddress, u256>,
+        total_debt:        u256,
+        paused:            bool,
+        // High watermark: track ATH share price (1e18-scaled)
+        high_watermark:    u256,
     }
 
     #[event]
@@ -109,6 +144,7 @@ pub mod VaultManager {
     enum Event {
         Paused: Paused,
         Unpaused: Unpaused,
+        FeesCollected: FeesCollected,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -116,6 +152,9 @@ pub mod VaultManager {
 
     #[derive(Drop, starknet::Event)]
     struct Unpaused { by: ContractAddress }
+
+    #[derive(Drop, starknet::Event)]
+    struct FeesCollected { levamm_fees: u256 }
 
     #[constructor]
     fn constructor(
@@ -138,16 +177,21 @@ pub mod VaultManager {
         self.risk_manager.write(risk_manager);
         self.owner.write(owner);
         self.paused.write(false);
+        self.high_watermark.write(1_000000000000000000); // 1.0 initial share price
     }
 
     #[abi(embed_v0)]
     impl VaultManagerImpl of IVaultManager<ContractState> {
-        /// Deposit BTC — correct YieldBasis CDP flow.
+        /// Deposit BTC — correct StarkYield CDP flow.
         ///
         /// Order: flash_loan → add_liquidity → deposit_collateral_lp → borrow_usdc → repay_flash_loan
         fn deposit(ref self: ContractState, amount: u256) -> u256 {
             assert(!self.paused.read(), 'Vault is paused');
+            self._check_price_staleness();
             assert(amount > 0, 'Amount must be > 0');
+
+            // Auto-harvest pending fees before new deposit
+            self._auto_harvest();
 
             let caller     = get_caller_address();
             let this       = get_contract_address();
@@ -202,12 +246,13 @@ pub mod VaultManager {
             shares
         }
 
-        /// Withdraw BTC — correct YieldBasis CDP flow.
+        /// Withdraw BTC — correct StarkYield CDP flow.
         ///
         /// Order: [risk_check] → flash_loan(debt) → repay_usdc → withdraw_collateral_lp
         ///        → remove_liquidity → [re-add remaining LP] → repay_flash_loan → burn LT → send BTC
         fn withdraw(ref self: ContractState, shares: u256) -> u256 {
             assert(!self.paused.read(), 'Vault is paused');
+            self._check_price_staleness();
             assert(shares > 0, 'Shares must be > 0');
 
             let caller   = get_caller_address();
@@ -218,10 +263,14 @@ pub mod VaultManager {
             let rm_addr = self.risk_manager.read();
             let zero: ContractAddress = 0.try_into().unwrap();
             if rm_addr != zero {
-                let ok = IRiskManagerDispatcher { contract_address: rm_addr }
-                    .check_withdrawal_limit(shares, self.total_shares.read());
+                let rm = IRiskManagerDispatcher { contract_address: rm_addr };
+                let ok = rm.check_withdrawal_limit(shares);
                 assert(ok, 'RiskManager: limit exceeded');
+                rm.record_withdrawal(shares);
             }
+
+            // Auto-harvest pending fees before withdrawal
+            self._auto_harvest();
 
             let total      = self.total_shares.read();
             let total_debt = self.total_debt.read();
@@ -308,6 +357,60 @@ pub mod VaultManager {
 
         fn is_paused(self: @ContractState) -> bool {
             self.paused.read()
+        }
+
+        /// Trigger fee collection: accrue LEVAMM interest, then collect trading fees.
+        /// Permissionless — anyone can call.
+        fn collect_fees(ref self: ContractState) -> u256 {
+            let zero: ContractAddress = 0.try_into().unwrap();
+            let levamm_addr = self.levamm.read();
+            if levamm_addr == zero { return 0; }
+
+            let levamm = ILevAMMFacadeDispatcher { contract_address: levamm_addr };
+            levamm.accrue_interest();
+            let fees = levamm.collect_fees();
+            self.emit(FeesCollected { levamm_fees: fees });
+            fees
+        }
+
+        fn set_fee_distributor(ref self: ContractState, addr: ContractAddress) {
+            assert(get_caller_address() == self.owner.read(), 'Only owner');
+            self.fee_distributor.write(addr);
+        }
+
+        fn set_levamm(ref self: ContractState, addr: ContractAddress) {
+            assert(get_caller_address() == self.owner.read(), 'Only owner');
+            self.levamm.write(addr);
+        }
+
+        fn set_pragma_adapter(ref self: ContractState, addr: ContractAddress) {
+            assert(get_caller_address() == self.owner.read(), 'Only owner');
+            self.pragma_adapter.write(addr);
+        }
+    }
+
+    #[generate_trait]
+    impl InternalImpl of InternalTrait {
+        /// If a PragmaAdapter is wired (non-zero), assert the price feed is fresh.
+        /// Skips the check when pragma_adapter is the zero address (backwards compatible).
+        fn _check_price_staleness(self: @ContractState) {
+            let pragma_addr = self.pragma_adapter.read();
+            let zero: ContractAddress = 0.try_into().unwrap();
+            if pragma_addr != zero {
+                let pragma = IPragmaFacadeDispatcher { contract_address: pragma_addr };
+                assert(!pragma.is_price_stale(), 'Price feed stale');
+            }
+        }
+
+        /// Auto-harvest: collect LEVAMM fees + flush to LT holders via FeeDistributor.
+        /// Graceful no-op when LEVAMM or FeeDistributor is not wired (zero address).
+        fn _auto_harvest(ref self: ContractState) {
+            self.collect_fees();
+            let fd_addr = self.fee_distributor.read();
+            let zero: ContractAddress = 0.try_into().unwrap();
+            if fd_addr != zero {
+                IFeeDistributorFacadeDispatcher { contract_address: fd_addr }.harvest();
+            }
         }
     }
 }

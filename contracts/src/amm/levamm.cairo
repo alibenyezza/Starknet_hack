@@ -1,6 +1,6 @@
-//! LEVAMM — Constant Leverage AMM (2× IL-free) — YieldBasis semantics
+//! LEVAMM — Constant Leverage AMM (2× IL-free) — StarkYield semantics
 //!
-//! In YieldBasis: x = LP token quantity (not raw BTC), d = USDC debt, C = LP value in USDC.
+//! In StarkYield: x = LP token quantity (not raw BTC), d = USDC debt, C = LP value in USDC.
 //! The bonding curve math is unchanged; only the collateral asset interpretation differs.
 //! LP tokens from the Ekubo BTC/USDC pool serve as collateral in the CDP, making
 //! impermanent loss a non-event (the LP position is always hedged by the debt).
@@ -11,8 +11,48 @@
 //!   Invariant I(p0) = (x0(p0) - d_lp) · y  where d_lp = D / lp_price
 //!
 //! Safety bands: DTV (Debt-To-Value) must stay in [6.25%, 53.125%] for 2× leverage.
+//!
+//! Active rebalancing (StarkYield-compliant):
+//!   After each swap, _rebalance_cdp() restores DTV to ~50% using:
+//!   - VirtualPool flash loans for USDC liquidity
+//!   - MockEkubo for LP addition/removal
+//!   - MockLending for CDP debt adjustment
 
 use starknet::ContractAddress;
+
+/// Minimal FeeDistributor facade for cross-contract calls
+#[starknet::interface]
+trait IFeeDistributorFacade<TContractState> {
+    fn distribute(ref self: TContractState, fee_amount: u256);
+    fn record_interest(ref self: TContractState, interest_amount: u256);
+}
+
+/// VirtualPool facade — flash loans for rebalancing
+#[starknet::interface]
+trait IVirtualPoolRebalance<TContractState> {
+    fn flash_loan(ref self: TContractState, amount: u256);
+    fn repay_flash_loan(ref self: TContractState, amount: u256);
+}
+
+/// Ekubo facade — LP operations for rebalancing
+#[starknet::interface]
+trait IEkuboRebalance<TContractState> {
+    fn add_liquidity(ref self: TContractState, btc_amount: u256, usdc_amount: u256) -> u64;
+    fn remove_liquidity(ref self: TContractState, token_id: u64) -> (u256, u256);
+}
+
+/// Lending facade — CDP debt management for rebalancing
+#[starknet::interface]
+trait ILendingRebalance<TContractState> {
+    fn borrow_usdc(ref self: TContractState, usdc_amount: u256);
+    fn repay_usdc(ref self: TContractState, usdc_amount: u256);
+}
+
+/// Minimal ERC-20 facade for approve calls during rebalancing
+#[starknet::interface]
+trait IERC20Approve<TContractState> {
+    fn approve(ref self: TContractState, spender: ContractAddress, amount: u256) -> bool;
+}
 
 #[starknet::interface]
 pub trait ILevAMM<TContractState> {
@@ -41,6 +81,8 @@ pub trait ILevAMM<TContractState> {
     fn is_active(self: @TContractState) -> bool;
     /// Returns accrued interest since last settlement
     fn get_accrued_interest(self: @TContractState) -> u256;
+    /// Returns the LP token ID from the last rebalancing operation
+    fn get_rebalance_lp_id(self: @TContractState) -> u64;
 
     // ── Mutating functions ──────────────────────────────────────────────────
     /// Initialize the LEVAMM with starting collateral value, debt, and oracle price
@@ -57,16 +99,37 @@ pub trait ILevAMM<TContractState> {
     /// Donate USDC to deepen pool liquidity (refueling mechanism)
     fn refuel(ref self: TContractState, usdc_amount: u256);
 
+    // ── Fee management (StarkYield) ─────────────────────────────────────
+    /// Returns accumulated trading fees not yet distributed
+    fn get_accumulated_trading_fees(self: @TContractState) -> u256;
+    /// Returns total trading fees generated since initialization (never resets)
+    fn get_total_fees_generated(self: @TContractState) -> u256;
+    /// Returns the block number at which the LEVAMM was initialized
+    fn get_init_block(self: @TContractState) -> u64;
+    /// Collect accumulated trading fees and route to FeeDistributor
+    fn collect_fees(ref self: TContractState) -> u256;
+
     // ── Admin ──────────────────────────────────────────────────────────────
     fn set_interest_rate(ref self: TContractState, rate: u256);
     fn set_pragma_adapter(ref self: TContractState, adapter: ContractAddress);
+    fn set_fee_distributor(ref self: TContractState, fee_distributor: ContractAddress);
+    fn set_virtual_pool(ref self: TContractState, addr: ContractAddress);
+    fn set_ekubo_adapter(ref self: TContractState, addr: ContractAddress);
+    fn set_lending_adapter(ref self: TContractState, addr: ContractAddress);
     fn set_owner(ref self: TContractState, new_owner: ContractAddress);
     fn get_owner(self: @TContractState) -> ContractAddress;
 }
 
 #[starknet::contract]
 pub mod LevAMM {
-    use super::{ILevAMM, ContractAddress};
+    use super::{
+        ILevAMM, ContractAddress,
+        IFeeDistributorFacadeDispatcher, IFeeDistributorFacadeDispatcherTrait,
+        IVirtualPoolRebalanceDispatcher, IVirtualPoolRebalanceDispatcherTrait,
+        IEkuboRebalanceDispatcher, IEkuboRebalanceDispatcherTrait,
+        ILendingRebalanceDispatcher, ILendingRebalanceDispatcherTrait,
+        IERC20ApproveDispatcher, IERC20ApproveDispatcherTrait,
+    };
     use starknet::{get_caller_address, get_block_number};
     use starknet::storage::{StoragePointerReadAccess, StoragePointerWriteAccess};
     use starkyield::utils::constants::Constants;
@@ -88,6 +151,16 @@ pub mod LevAMM {
         accrued_interest: u256,
         last_interest_block: u64,
         interest_rate: u256,      // per-block rate (1e18-scaled)
+        // Fee management (StarkYield / time-normalized)
+        fee_distributor: ContractAddress,
+        accumulated_trading_fees: u256,   // resets on collect_fees()
+        total_fees_generated: u256,       // all-time counter (never resets) — used for APR
+        init_block: u64,                  // block at initialization — used for time-normalized APR
+        // Rebalancing integrations (StarkYield-compliant)
+        virtual_pool: ContractAddress,
+        ekubo_adapter: ContractAddress,
+        lending_adapter: ContractAddress,
+        rebalance_lp_id: u64,     // LP token ID from last rebalance add_liquidity
         // State flag
         is_active: bool,
     }
@@ -100,6 +173,8 @@ pub mod LevAMM {
         InterestAccrued: InterestAccrued,
         Refueled: Refueled,
         InterestRateSet: InterestRateSet,
+        FeeCollected: FeeCollected,
+        Rebalanced: Rebalanced,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -116,7 +191,11 @@ pub mod LevAMM {
         btc_amount: u256,
         usdc_amount: u256,
         new_dtv: u256,
+        fee: u256,
     }
+
+    #[derive(Drop, starknet::Event)]
+    struct FeeCollected { total_fees: u256, pool_recycled: u256, distributed: u256 }
 
     #[derive(Drop, starknet::Event)]
     struct InterestAccrued { interest: u256, new_debt: u256 }
@@ -126,6 +205,16 @@ pub mod LevAMM {
 
     #[derive(Drop, starknet::Event)]
     struct InterestRateSet { new_rate: u256 }
+
+    /// Emitted when active CDP rebalancing adjusts debt and collateral.
+    /// direction=true → leverage up (added debt + LP), false → deleverage
+    #[derive(Drop, starknet::Event)]
+    struct Rebalanced {
+        direction: bool,
+        adjustment_scaled: u256,
+        adjustment_raw: u256,
+        new_dtv: u256,
+    }
 
     #[constructor]
     fn constructor(
@@ -142,6 +231,10 @@ pub mod LevAMM {
         self.is_active.write(false);
         self.accrued_interest.write(0);
         self.interest_rate.write(0);
+        self.accumulated_trading_fees.write(0);
+        self.total_fees_generated.write(0);
+        self.init_block.write(0);
+        self.rebalance_lp_id.write(0);
     }
 
     #[abi(embed_v0)]
@@ -195,6 +288,7 @@ pub mod LevAMM {
         fn get_entry_price(self: @ContractState) -> u256 { self.entry_price.read() }
         fn is_active(self: @ContractState) -> bool { self.is_active.read() }
         fn get_accrued_interest(self: @ContractState) -> u256 { self.accrued_interest.read() }
+        fn get_rebalance_lp_id(self: @ContractState) -> u64 { self.rebalance_lp_id.read() }
 
         fn get_current_btc_price(self: @ContractState) -> u256 {
             self._get_btc_price()
@@ -218,9 +312,6 @@ pub mod LevAMM {
             self.entry_price.write(entry_price);
 
             // Compute invariant: I = (x0 - d_btc) * y
-            //   x0 is in "BTC units" (1e18)
-            //   d_btc = debt / entry_price  (also 1e18)
-            //   y = collateral_value (in USDC 1e18)
             let x0 = self._calculate_x0(collateral_value, debt);
             let d_btc = Math::div_fixed(debt, entry_price);
             assert(x0 > d_btc, 'x0 must exceed d_btc');
@@ -229,7 +320,9 @@ pub mod LevAMM {
 
             self.invariant.write(inv);
             self.is_active.write(true);
-            self.last_interest_block.write(get_block_number());
+            let current_block = get_block_number();
+            self.last_interest_block.write(current_block);
+            self.init_block.write(current_block);
 
             self.emit(Initialized { collateral_value, debt, invariant: inv, entry_price });
         }
@@ -242,29 +335,55 @@ pub mod LevAMM {
 
             if direction {
                 // Buying BTC (USDC in): only valid when under-levered (DTV < target)
-                // LP is priced at a premium → arbitrageur buys LP with USDC to re-level
                 assert(dtv <= Constants::DTV_MAX_2X, 'Cannot buy: over-levered');
             } else {
                 // Selling BTC (USDC out): only valid when over-levered (DTV > target)
-                // LP is priced at a discount → arbitrageur sells LP for USDC to de-lever
                 assert(dtv >= Constants::DTV_MIN_2X, 'Cannot sell: under-levered');
             }
 
-            let usdc_amount = self.get_price(btc_amount);
-            assert(usdc_amount > 0, 'Zero output');
+            let base_usdc = self.get_price(btc_amount);
+            assert(base_usdc > 0, 'Zero output');
 
-            // Update collateral: buying BTC increases USDC reserves (collateral up)
-            //                    selling BTC decreases USDC reserves (collateral down)
+            // StarkYield trading fee (0.3%)
+            let fee = Math::mul_fixed(base_usdc, Constants::SWAP_FEE);
+
+            // Update collateral (bonding curve amount only — fee is separate)
             let c = self.collateral_value.read();
             if direction {
-                self.collateral_value.write(c + usdc_amount);
+                // Buy BTC: collateral increases by bonding curve amount
+                self.collateral_value.write(c + base_usdc);
             } else {
-                let new_c = if c > usdc_amount { c - usdc_amount } else { 0 };
+                // Sell BTC: collateral decreases by bonding curve amount
+                let new_c = if c > base_usdc { c - base_usdc } else { 0 };
                 self.collateral_value.write(new_c);
             }
 
+            // Accumulate trading fees for batch distribution
+            if fee > 0 {
+                self.accumulated_trading_fees.write(
+                    self.accumulated_trading_fees.read() + fee
+                );
+                // time-normalized: all-time counter for time-normalized APR (never resets)
+                self.total_fees_generated.write(
+                    self.total_fees_generated.read() + fee
+                );
+            }
+
+            // User-facing amount includes fee
+            let usdc_amount = if direction {
+                base_usdc + fee  // buyer pays bonding curve price + fee
+            } else {
+                if base_usdc > fee { base_usdc - fee } else { 0 }  // seller receives less
+            };
+
             let new_dtv = self.get_dtv();
-            self.emit(Swapped { direction, btc_amount, usdc_amount, new_dtv });
+            self.emit(Swapped { direction, btc_amount, usdc_amount, new_dtv, fee });
+
+            // ── Active CDP rebalancing (StarkYield-compliant) ──
+            // After the swap changes accounting, restore DTV to ~50% using
+            // flash loans + LP + CDP operations.
+            self._rebalance_cdp();
+
             usdc_amount
         }
 
@@ -288,6 +407,20 @@ pub mod LevAMM {
             self.accrued_interest.write(self.accrued_interest.read() + interest);
             self.last_interest_block.write(current_block);
 
+            // StarkYield: 100% of CDP interest recycled into pool collateral
+            let recycled = Math::mul_fixed(interest, Constants::INTEREST_RECYCLE_RATE);
+            if recycled > 0 {
+                self.collateral_value.write(self.collateral_value.read() + recycled);
+            }
+
+            // Notify FeeDistributor for accounting
+            let fd_addr = self.fee_distributor.read();
+            let zero: ContractAddress = 0_felt252.try_into().unwrap();
+            if fd_addr != zero && interest > 0 {
+                IFeeDistributorFacadeDispatcher { contract_address: fd_addr }
+                    .record_interest(interest);
+            }
+
             self.emit(InterestAccrued { interest, new_debt });
         }
 
@@ -307,9 +440,71 @@ pub mod LevAMM {
             self.emit(InterestRateSet { new_rate: rate });
         }
 
+        // ── Fee management (StarkYield) ─────────────────────────────────
+
+        fn get_accumulated_trading_fees(self: @ContractState) -> u256 {
+            self.accumulated_trading_fees.read()
+        }
+
+        fn get_total_fees_generated(self: @ContractState) -> u256 {
+            self.total_fees_generated.read()
+        }
+
+        fn get_init_block(self: @ContractState) -> u64 {
+            self.init_block.read()
+        }
+
+        /// Collect accumulated trading fees: 50% auto-recycled into pool,
+        /// 50% routed to FeeDistributor for holder/veSY distribution.
+        /// Permissionless — anyone can trigger fee distribution.
+        fn collect_fees(ref self: ContractState) -> u256 {
+            let fees = self.accumulated_trading_fees.read();
+            if fees == 0 { return 0; }
+
+            self.accumulated_trading_fees.write(0);
+
+            // StarkYield: 50% donated back to pool (deepens liquidity)
+            let pool_recycled = Math::mul_fixed(fees, Constants::FEE_POOL_SHARE);
+            self.collateral_value.write(self.collateral_value.read() + pool_recycled);
+
+            // 50% to FeeDistributor for holder/veSY split
+            let dist_share = fees - pool_recycled;
+            let fd_addr = self.fee_distributor.read();
+            let zero: ContractAddress = 0_felt252.try_into().unwrap();
+            if fd_addr != zero && dist_share > 0 {
+                IFeeDistributorFacadeDispatcher { contract_address: fd_addr }
+                    .distribute(dist_share);
+            }
+
+            self.emit(FeeCollected { total_fees: fees, pool_recycled, distributed: dist_share });
+            fees
+        }
+
+        // ── Admin ────────────────────────────────────────────────────────
+
         fn set_pragma_adapter(ref self: ContractState, adapter: ContractAddress) {
             assert(get_caller_address() == self.owner.read(), 'Only owner');
             self.pragma_adapter.write(adapter);
+        }
+
+        fn set_fee_distributor(ref self: ContractState, fee_distributor: ContractAddress) {
+            assert(get_caller_address() == self.owner.read(), 'Only owner');
+            self.fee_distributor.write(fee_distributor);
+        }
+
+        fn set_virtual_pool(ref self: ContractState, addr: ContractAddress) {
+            assert(get_caller_address() == self.owner.read(), 'Only owner');
+            self.virtual_pool.write(addr);
+        }
+
+        fn set_ekubo_adapter(ref self: ContractState, addr: ContractAddress) {
+            assert(get_caller_address() == self.owner.read(), 'Only owner');
+            self.ekubo_adapter.write(addr);
+        }
+
+        fn set_lending_adapter(ref self: ContractState, addr: ContractAddress) {
+            assert(get_caller_address() == self.owner.read(), 'Only owner');
+            self.lending_adapter.write(addr);
         }
 
         fn set_owner(ref self: ContractState, new_owner: ContractAddress) {
@@ -325,11 +520,6 @@ pub mod LevAMM {
         /// Compute x0 given collateral C and debt D (both 1e18-scaled USDC values)
         ///
         /// Formula: x0 = (C + sqrt(C^2 - 4·C·LEV_RATIO·D)) / (2·LEV_RATIO)
-        ///
-        /// Note on fixed-point scaling:
-        ///   mul_fixed(a, b) = a*b/SCALE  → so mul_fixed(C,C) = C^2/SCALE (still 1e18)
-        ///   sqrt(discriminant * SCALE) → gives a 1e18-scaled result
-        ///   (same pattern as il_eliminator.cairo: sqrt(price_ratio * SCALE))
         fn _calculate_x0(self: @ContractState, c: u256, d: u256) -> u256 {
             if c == 0 { return 0; }
             if d == 0 { return c; }  // no debt → x0 = C
@@ -340,32 +530,23 @@ pub mod LevAMM {
             let c_squared = Math::mul_fixed(c, c);
 
             // four_c_lev_d = 4 * C * LEV_RATIO * D / SCALE^2
-            // Step 1: c * lev / SCALE
             let c_lev = Math::mul_fixed(c, lev);
-            // Step 2: c_lev * d / SCALE
             let c_lev_d = Math::mul_fixed(c_lev, d);
-            // Step 3: 4 * c_lev_d
             let four_c_lev_d = 4_u256 * c_lev_d;
 
             // Guard: discriminant must be non-negative (valid leverage regime)
             if four_c_lev_d >= c_squared {
-                // Edge case: extremely high leverage ratio — return C / (2*LEV_RATIO)
                 return Math::div_fixed(c, 2_u256 * lev);
             }
 
             let discriminant = c_squared - four_c_lev_d;
 
             // sqrt of a 1e18-scaled value: multiply by SCALE first, then sqrt
-            // Result is 1e18-scaled
             let sqrt_disc = Math::sqrt(discriminant * Constants::SCALE);
 
-            // numerator = C + sqrt(discriminant)  [both 1e18-scaled]
             let numerator = c + sqrt_disc;
-
-            // denominator = 2 * LEV_RATIO  [1e18-scaled: 2 * 444...444]
             let denominator = 2_u256 * lev;
 
-            // x0 = numerator / denominator
             Math::div_fixed(numerator, denominator)
         }
 
@@ -374,10 +555,171 @@ pub mod LevAMM {
             let adapter = self.pragma_adapter.read();
             let zero: ContractAddress = 0_felt252.try_into().unwrap();
             if adapter == zero {
-                // Fallback: use entry price if adapter not set
                 return self.entry_price.read();
             }
             IPragmaAdapterDispatcher { contract_address: adapter }.get_btc_price()
+        }
+
+        /// Active CDP rebalancing — StarkYield-compliant.
+        ///
+        /// After each swap, check if DTV has deviated from TARGET_DTV (50%).
+        /// If deviation > threshold, use flash loans + LP + debt operations
+        /// to restore DTV to ~50%.
+        ///
+        /// Leverage up (DTV < 50%):
+        ///   1. Flash-borrow X USDC from VirtualPool
+        ///   2. Add USDC-only LP on Ekubo → get LP token
+        ///   3. Borrow X USDC from lending (new debt)
+        ///   4. Repay flash loan
+        ///   Result: debt += X, collateral += X → DTV closer to 50%
+        ///
+        /// Deleverage (DTV > 50%):
+        ///   1. Flash-borrow Y USDC from VirtualPool
+        ///   2. Repay Y USDC debt (mock: decrements counter)
+        ///   3. Remove old rebalance LP if any
+        ///   4. Repay flash loan
+        ///   Result: debt -= Y, collateral -= Y → DTV closer to 50%
+        fn _rebalance_cdp(ref self: ContractState) {
+            let c = self.collateral_value.read();
+            let d = self.debt.read();
+            if c == 0 { return; }
+
+            let dtv = Math::div_fixed(d, c);
+            let target = Constants::TARGET_DTV;
+            let threshold = Constants::REBALANCE_DTV_THRESHOLD;
+
+            // Check if DTV is close enough to target — skip if within threshold
+            let diff = if dtv >= target { dtv - target } else { target - dtv };
+            if diff <= threshold { return; }
+
+            // Check integrations are wired — graceful skip if not configured
+            let vpool_addr = self.virtual_pool.read();
+            let ekubo_addr = self.ekubo_adapter.read();
+            let lend_addr = self.lending_adapter.read();
+            let zero: ContractAddress = 0_felt252.try_into().unwrap();
+            if vpool_addr == zero || lend_addr == zero { return; }
+
+            let usdc_addr = self.usdc_token.read();
+            let usdc = IERC20ApproveDispatcher { contract_address: usdc_addr };
+            let vpool = IVirtualPoolRebalanceDispatcher { contract_address: vpool_addr };
+            let lending = ILendingRebalanceDispatcher { contract_address: lend_addr };
+
+            if dtv < target {
+                // ── Leverage up: need more debt to reach 50% DTV ──
+                //
+                // Math: We want (D + X) / (C + X) = TARGET_DTV
+                //   D + X = TARGET_DTV * (C + X)
+                //   D + X = TARGET_DTV * C + TARGET_DTV * X
+                //   X * (1 - TARGET_DTV) = TARGET_DTV * C - D
+                //   X = (TARGET_DTV * C - D) / (1 - TARGET_DTV)
+                //
+                // For TARGET_DTV = 0.5: X = (0.5*C - D) / 0.5 = C - 2D
+
+                let target_debt = Math::mul_fixed(target, c);
+                if target_debt <= d { return; }  // safety check
+
+                let numerator = target_debt - d;
+                let denominator = Constants::SCALE - target;
+                let x = Math::div_fixed(numerator, denominator);
+                if x == 0 { return; }
+
+                // Convert from 1e18-scaled to raw USDC (6 decimals)
+                let x_raw = x / Constants::USDC_SCALE_FACTOR;
+                if x_raw == 0 { return; }
+
+                // 1. Flash-borrow X USDC from VirtualPool
+                vpool.flash_loan(x_raw);
+
+                // 2. Add USDC-only LP on Ekubo (if adapter is set)
+                //    This demonstrates the real token flow for leveraged LP
+                if ekubo_addr != zero {
+                    // Remove old rebalance LP if any (merge into new)
+                    let old_lp = self.rebalance_lp_id.read();
+                    if old_lp > 0 {
+                        let ekubo = IEkuboRebalanceDispatcher { contract_address: ekubo_addr };
+                        ekubo.remove_liquidity(old_lp);
+                        // Recovered tokens stay in LEVAMM, available for new LP
+                    }
+
+                    usdc.approve(ekubo_addr, x_raw);
+                    let ekubo = IEkuboRebalanceDispatcher { contract_address: ekubo_addr };
+                    let lp_id = ekubo.add_liquidity(0, x_raw);
+                    self.rebalance_lp_id.write(lp_id);
+                }
+
+                // 3. Borrow X USDC from lending (increases real CDP debt)
+                //    Mock mints USDC and sends to LEVAMM
+                lending.borrow_usdc(x_raw);
+
+                // 4. Repay flash loan with borrowed USDC
+                usdc.approve(vpool_addr, x_raw);
+                vpool.repay_flash_loan(x_raw);
+
+                // 5. Update 1e18-scaled accounting
+                self.debt.write(d + x);
+                self.collateral_value.write(c + x);
+
+                let new_dtv = self.get_dtv();
+                self.emit(Rebalanced {
+                    direction: true, adjustment_scaled: x, adjustment_raw: x_raw, new_dtv,
+                });
+            } else {
+                // ── Deleverage: need less debt to reach 50% DTV ──
+                //
+                // Math: We want (D - Y) / (C - Y) = TARGET_DTV
+                //   D - Y = TARGET_DTV * (C - Y)
+                //   D - Y = TARGET_DTV * C - TARGET_DTV * Y
+                //   -Y + TARGET_DTV * Y = TARGET_DTV * C - D
+                //   Y * (TARGET_DTV - 1) = TARGET_DTV * C - D
+                //   Y = (D - TARGET_DTV * C) / (1 - TARGET_DTV)
+                //
+                // For TARGET_DTV = 0.5: Y = (D - 0.5*C) / 0.5 = 2D - C
+
+                let target_debt = Math::mul_fixed(target, c);
+                if d <= target_debt { return; }  // safety check
+
+                let numerator = d - target_debt;
+                let denominator = Constants::SCALE - target;
+                let y = Math::div_fixed(numerator, denominator);
+                if y == 0 { return; }
+
+                // Cap at current debt
+                let y = Math::min(y, d);
+
+                // Convert from 1e18-scaled to raw USDC (6 decimals)
+                let y_raw = y / Constants::USDC_SCALE_FACTOR;
+                if y_raw == 0 { return; }
+
+                // 1. Flash-borrow Y USDC from VirtualPool
+                vpool.flash_loan(y_raw);
+
+                // 2. Repay Y USDC debt (mock: just decrements counter, no token pull)
+                lending.repay_usdc(y_raw);
+
+                // 3. Remove old rebalance LP if any → recovered tokens stay in LEVAMM
+                let old_lp = self.rebalance_lp_id.read();
+                if old_lp > 0 && ekubo_addr != zero {
+                    let ekubo = IEkuboRebalanceDispatcher { contract_address: ekubo_addr };
+                    ekubo.remove_liquidity(old_lp);
+                    self.rebalance_lp_id.write(0);
+                }
+
+                // 4. Repay flash loan (USDC from step 1 is still in LEVAMM since
+                //    mock repay_usdc doesn't actually pull tokens)
+                usdc.approve(vpool_addr, y_raw);
+                vpool.repay_flash_loan(y_raw);
+
+                // 5. Update 1e18-scaled accounting
+                let new_d = if d >= y { d - y } else { 0 };
+                let new_c = if c >= y { c - y } else { 0 };
+                self.debt.write(new_d);
+                self.collateral_value.write(new_c);
+
+                let new_dtv = self.get_dtv();
+                self.emit(Rebalanced {
+                    direction: false, adjustment_scaled: y, adjustment_raw: y_raw, new_dtv,
+                });
+            }
         }
     }
 }

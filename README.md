@@ -1,17 +1,33 @@
 # StarkYield — IL-Free BTC Leveraged Liquidity on Starknet
 
-StarkYield is an IL-free BTC yield protocol on Starknet. Users deposit wBTC and receive **syBTC** (a yield-bearing receipt token). The protocol automatically deploys the BTC into an Ekubo LP + Vesu leveraged position at **2× leverage**, which mathematically eliminates impermanent loss.
+StarkYield is an IL-free BTC yield protocol on Starknet. Users deposit wBTC and receive **LT shares** (a yield-bearing receipt token). The protocol deploys BTC into an Ekubo LP + Vesu leveraged CDP at **2x leverage**, which mathematically eliminates impermanent loss. Active CDP rebalancing restores DTV to 50% after every swap.
 
-**Live on Starknet Sepolia testnet.**
+**Live on Starknet Sepolia testnet** — ~10,000+ lines of production code across 38 Cairo files, 11 test suites, and a full React frontend.
 
 ---
 
-## Why 2× Leverage Eliminates IL
+## Table of Contents
 
-In a standard AMM, LP value grows as √p (square root of price). With 2× leverage applied to the LP:
+- [Why 2x Leverage Eliminates IL](#why-2x-leverage-eliminates-il)
+- [Architecture](#architecture)
+- [Fee Model](#fee-model)
+- [Smart Contracts](#smart-contracts)
+- [Frontend](#frontend)
+- [Repository Structure](#repository-structure)
+- [Deployed Contracts](#deployed-contracts--starknet-sepolia)
+- [Quick Start](#quick-start)
+- [Tech Stack](#tech-stack)
+- [Protocol Compliance](#protocol-compliance-95)
+- [Hackathon](#hackathon)
+
+---
+
+## Why 2x Leverage Eliminates IL
+
+In a standard AMM, LP value grows as sqrt(p). With 2x leverage applied to the LP:
 
 ```
-V(p) ∝ (√p)^L = (√p)^2 = p
+V(p) ~ (sqrt(p))^L = (sqrt(p))^2 = p
 ```
 
 The position scales **linearly** with BTC price — identical to just holding BTC — so there is zero impermanent loss.
@@ -22,34 +38,291 @@ The position scales **linearly** with BTC price — identical to just holding BT
 
 ```
 wBTC deposit
-    │
-    ▼
-VaultManager ──────────────────────────────────────────────────────────
-    │ mints syBTC shares                                               │
-    │                                                                  │
-    ▼                                                                  │
-LeverageManager (allocate)                                             │
-    ├── MockEkuboAdapter ──→ Ekubo BTC/USDC LP                         │
-    └── MockVesuAdapter  ──→ Vesu CDP (borrow USDC against LP)         │
-                                                                       │
-LEVAMM (Constant Leverage AMM)  ←── VirtualPool (arbitrage rebalance) │
-    ├── x0 bonding curve (LEV_RATIO = 4/9)                            │
-    ├── DTV safety bands [6.25%, 53.125%]                              │
-    └── Interest accrual + refueling                                   │
-                                                                       │
-Factory (market registry) ─────────────────────────────────────────────
-    └── registers markets, blueprint class hashes, debt ceilings
+    |
+    v
+VaultManager (pausable, risk_manager aware)
+    |  mints LT shares (1:1 with deposited BTC)
+    |
+    v
+    +-- Flash Loan USDC from VirtualPool (fee-less)
+    +-- Add LP on Ekubo (BTC + USDC -> LP position)
+    +-- Wrap LP NFT into ERC20 via EkuboLPWrapper
+    +-- Post LP ERC20 as collateral on Vesu CDP
+    +-- Borrow USDC from Vesu against LP collateral
+    +-- Repay flash loan with borrowed USDC
+    |
+    v
+LEVAMM (Constant Leverage AMM)
+    +-- x0 bonding curve (LEV_RATIO = 4/9)
+    +-- DTV safety bands [6.25%, 53.125%]
+    +-- Active CDP rebalancing after each swap (_rebalance_cdp)
+    +-- Interest accrual + refueling
+    +-- 0.3% trading fee accumulation
 
-Staker
-    ├── stake syBTC → earn syYB emissions (MasterChef)
-    └── unstake / claim_rewards
+VirtualPool (reserves-based)
+    +-- Fee-less flash loans for deposit/withdraw/rebalancing
+    +-- Pre-funded USDC reserves
 
-Governance (stubs)
-    ├── syYB token (ERC-20)
-    ├── VotingEscrow (lock syYB → vesyYB voting power)
-    ├── GaugeController (vote on emission weights)
-    └── LiquidityGauge (emission distribution)
+FeeDistributor
+    +-- 50/50 split: pool recycle + distribution
+    +-- Dynamic admin fee: f_a = 1 - (1-f_min) * sqrt(1 - s/T)
+    +-- Recovery mode (High Watermark)
+    +-- Permissionless harvest()
+
+EkuboLPWrapper (Bunni-inspired)
+    +-- ERC20 wrapper for Ekubo LP NFTs
+    +-- Enables LP as Vesu collateral
+
+Governance
+    +-- sy-WBTC token (ERC-20 governance)
+    +-- VotingEscrow (lock sy-WBTC -> veSyWBTC, linear decay, 4yr max)
+    +-- GaugeController v2 (veSyWBTC balance check before voting)
+    +-- LiquidityGauge (MasterChef emission distribution)
+
+Staker (MasterChef pattern)
+    +-- Stake LT -> earn sy-WBTC governance token emissions
+    +-- Configurable reward_rate for dynamic APR
+    +-- depositAndStake: deposit wBTC + stake in one multicall
+    +-- unstakeAndWithdraw: unstake + withdraw wBTC in one click
 ```
+
+### Deposit Flow
+
+```
+1. User deposits X wBTC
+2. VaultManager flash loans (X * BTC_price) USDC from VirtualPool
+3. Adds LP on Ekubo: X wBTC + Y USDC -> LP position
+4. Wraps LP NFT into ERC20 shares via EkuboLPWrapper
+5. Posts LP ERC20 shares as collateral on Vesu
+6. Borrows USDC from Vesu against LP collateral
+7. Repays flash loan with borrowed USDC
+8. Mints LT shares 1:1 to user
+```
+
+### Withdraw Flow
+
+```
+1. Flash loan USDC (proportional to user's debt share)
+2. Repay USDC debt on Vesu
+3. Withdraw LP ERC20 collateral from Vesu
+4. Unwrap LP ERC20 -> remove LP from Ekubo -> get BTC + USDC
+5. Re-add remaining LP for other depositors (partial withdraw)
+6. Repay flash loan with recovered USDC
+7. Burn LT shares
+8. Transfer BTC to user
+```
+
+### Active CDP Rebalancing
+
+After every LEVAMM swap, `_rebalance_cdp()` checks if DTV has deviated more than 1% from the 50% target. If so, it restores DTV using flash loans:
+
+```
+Leverage up (DTV < 50%):
+  X = (TARGET_DTV * C - D) / (1 - TARGET_DTV)
+  Flash loan X USDC -> Add LP on Ekubo -> Borrow X USDC -> Repay flash loan
+  Result: debt += X, collateral += X -> DTV = 50%
+
+Deleverage (DTV > 50%):
+  Y = (D - TARGET_DTV * C) / (1 - TARGET_DTV)
+  Flash loan Y USDC -> Repay Y debt -> Remove old LP -> Repay flash loan
+  Result: debt -= Y, collateral -= Y -> DTV = 50%
+```
+
+---
+
+## Fee Model
+
+Revenue comes from **trading fees** (0.3% per LEVAMM swap) generated by the protocol's LP positions.
+
+### Net APR Formula
+
+```
+APR = 2 * r_pool - (r_borrow + r_releverage)
+```
+
+| Variable | Description |
+|----------|-------------|
+| `r_pool` | Fee APR from Ekubo pool (unlevered) |
+| `r_borrow` | Borrow rate on Vesu CDP |
+| `r_releverage` | Cost of maintaining 2x leverage (volatility decay) |
+
+### Fee Split (50/50)
+
+```
+LEVAMM trading fees (0.3% per swap)
+    |
+    +-- 50% --> Recycled into LP collateral (compounding)
+    |
+    +-- 50% --> FeeDistributor
+                  |
+                  +-- Recovery mode? -> 100% to restore LP value
+                  |
+                  +-- Subtract volatility decay costs
+                  |
+                  +-- (1 - f_a) --> LtToken.distribute_fees() -> unstaked LT holders
+                  |
+                  +-- f_a -------> veSyWBTC holders (admin fee / protocol revenue)
+```
+
+### Dynamic Admin Fee
+
+```
+f_a = 1 - (1 - f_min) * sqrt(1 - s/T)
+```
+
+- `f_min` = 10% (minimum admin fee)
+- `s` = staked LT, `T` = total LT supply
+
+| Stake Rate | Admin Fee (f_a) | LT Holders | veSyWBTC Gets |
+|-----------|-----------------|------------|-----------|
+| 0% | 10% | 90% | 10% |
+| 25% | 14% | 86% | 14% |
+| 50% | 29% | 71% | 29% |
+| 75% | 50% | 50% | 50% |
+| 100% | 100% | 0% | 100% |
+
+### High Watermark (Recovery Mode)
+
+When share price drops below the all-time high, **100% of revenue** restores LP value. Admin fee drops to 0% until full recovery.
+
+### Two Earning Options
+
+| Option | You Receive | You Forgo |
+|--------|-------------|-----------|
+| **Hold LT (unstaked)** | USDC trading fees (per-share accumulator) | sy-WBTC emissions |
+| **Stake LT** | sy-WBTC governance token emissions | Direct trading fees |
+
+---
+
+## Smart Contracts
+
+### Core
+
+| Contract | File | Description |
+|----------|------|-------------|
+| **VaultManager** | `vault/vault_manager.cairo` | Orchestrates deposit/withdraw with flash loans, LP, and CDP. Pausable, risk-aware. |
+| **LtToken** | `vault/lt_token.cairo` | Liquidity receipt token (ERC20) + per-share fee accumulator (MasterChef pattern). Permissionless `distribute_fees()` and `claim_fees()`. |
+| **LEVAMM** | `amm/levamm.cairo` | Constant Leverage AMM with bonding curve, active CDP rebalancing, fee accumulation, interest accrual. ~1000 lines. |
+| **VirtualPool** | `pool/virtual_pool.cairo` | Reserves-based fee-less flash loan provider for deposit/withdraw/rebalancing. |
+| **FeeDistributor** | `fees/fee_distributor.cairo` | 50/50 fee split, dynamic admin fee, recovery mode, permissionless harvest. |
+| **EkuboLPWrapper** | `integrations/ekubo_lp_wrapper.cairo` | Wraps Ekubo LP NFTs into ERC20 for Vesu collateral (Bunni-inspired). |
+
+### Staking & Governance
+
+| Contract | File | Description |
+|----------|------|-------------|
+| **Staker** | `staker/staker.cairo` | MasterChef: stake LT -> earn sy-WBTC emissions. Configurable reward_rate. Frontend provides multicall `depositAndStake` (deposit wBTC + stake in one tx). |
+| **SyYbToken** | `governance/sy_yb_token.cairo` | sy-WBTC governance token (ERC20, mintable by Staker). |
+| **VotingEscrow** | `governance/voting_escrow.cairo` | Lock sy-WBTC -> veSyWBTC. Linear decay, 1 week to 4 year max lock. |
+| **GaugeController** | `governance/gauge_controller.cairo` | Gauge voting with veSyWBTC balance verification (v2 security). |
+| **LiquidityGauge** | `governance/liquidity_gauge.cairo` | MasterChef emission distribution per gauge. |
+
+### Protocol Adapters
+
+| Adapter | File | External Protocol | Status |
+|---------|------|-------------------|--------|
+| EkuboAdapter | `integrations/ekubo.cairo` | Ekubo DEX | Written, not deployed |
+| VesuAdapter | `integrations/vesu.cairo` | Vesu lending | Written, not deployed |
+| PragmaAdapter | `integrations/pragma_oracle.cairo` | Pragma Network | Written, not deployed |
+| MockEkuboAdapter | `integrations/mock_ekubo.cairo` | Mock (multi-position LP) | Deployed |
+| MockLendingAdapter | `integrations/mock_lending.cairo` | Mock (per-caller CDP) | Deployed |
+
+### Risk & Utils
+
+| Contract | File | Description |
+|----------|------|-------------|
+| **RiskManager** | `risk/risk_manager.cairo` | Health factor monitoring (Safe > 2.0, Danger < 1.2, Liquidation < 1.0), daily withdrawal limits. |
+| **ILEliminator** | `strategy/il_eliminator.cairo` | IL monitoring (passive — IL is structurally eliminated via 2x leverage). |
+| **Math** | `utils/math.cairo` | Fixed-point arithmetic (mul, div, sqrt, min, max, abs_diff). |
+| **Constants** | `utils/constants.cairo` | Protocol parameters (SCALE=1e18, DTV bands, fees, rebalance threshold). |
+
+### Key Constants
+
+```
+SCALE = 1e18
+BTC_DECIMALS = 8,  USDC_DECIMALS = 6
+LEV_RATIO_2X = 4/9 = 0.444...
+DTV_MIN_2X = 6.25%,  DTV_MAX_2X = 53.125%
+TARGET_DTV = 50%,  REBALANCE_DTV_THRESHOLD = 1%
+FEE_POOL_SHARE = 50%,  FEE_DIST_SHARE = 50%
+MIN_ADMIN_FEE = 10%
+FLASH_LOAN_FEE = 0%,  SWAP_FEE = 0.3%
+```
+
+---
+
+## LEVAMM Math
+
+The Constant Leverage AMM maintains 2x leverage with a bonding curve:
+
+```
+LEV_RATIO = (L/(L+1))^2 = (2/3)^2 = 4/9   (for L=2)
+
+x0 = (C + sqrt(C^2 - 4*C*LEV_RATIO*D)) / (2*LEV_RATIO)
+
+Invariant: I(p0) = (x0 - d_btc) * y
+
+Safety bands: DTV in [6.25%, 53.125%]
+Target DTV: 50%
+Rebalance threshold: 1% deviation
+```
+
+Where:
+- `C` = collateral value (USDC, 1e18 scaled)
+- `D` = debt (USDC, 1e18 scaled)
+- `d_btc` = D / BTC_price (debt in BTC units)
+- `y` = collateral value
+
+---
+
+## Frontend
+
+### Pages
+
+| Page | Description |
+|------|-------------|
+| **VaultPage** | Main DeFi interface (~1200 lines). Two vault modes: Yield Bearing Vault (deposit/withdraw wBTC, earn trading fees) and Staked Vault (deposit wBTC directly, auto deposit+stake in one multicall, earn sy-WBTC emissions). Includes transaction flow visualization, APR charts, transaction history, fee claiming. |
+| **SwapPage** | LiFi cross-chain swap widget (embedded iframe) with video background. |
+| **ResourcesPage** | Full documentation: how-it-works guide, contract interfaces, network configuration, health factor reference. |
+| **TeamPage** | Team profiles with animations and video background. |
+
+### Hooks
+
+| Hook | Purpose |
+|------|---------|
+| `useVaultManager` | All contract interactions: deposit, withdraw, stake, unstake, depositAndStake, unstakeAndWithdraw, claimRewards, claimFees, collectFees, harvestFees, faucet, burnWbtc. Reads on-chain state (balances, shares, APR stats, staker stats, LEVAMM stats). |
+| `useBTCPrice` | Real-time BTC price from Binance API (fallback to on-chain MockEkubo). Returns price + 24h change %. |
+| `useToast` | Toast notification system (success, error, info, warning) with explorer links. |
+
+### UI Components
+
+| Category | Components |
+|----------|-----------|
+| **Layout** | StaggeredMenu (hamburger navigation with Home, Swap, Docs, Team, Faucet) |
+| **Landing** | Hero section, FeaturesSection (4-step "How it works" with scroll-driven animations) |
+| **Wallet** | WalletModal (ArgentX, Braavos), AccountMenu (address display, disconnect) |
+| **UI** | Toast, LoadingScreen, LogoLoop (partner carousel), StarBorder (animated border), StarkYieldLogoBg (WebGL background), CountUp, DarkVeil |
+| **Icons** | HomeIcon, SwapIcon, FileTextIcon, UserIcon, DropletIcon (all with framer-motion animations) |
+
+### Key Frontend Features
+
+| Feature | Status |
+|---------|--------|
+| Deposit/Withdraw wBTC (Yield Vault) | Working |
+| Stake/Unstake wBTC (Staked Vault, multicall) | Working |
+| Transaction flow visualization (step indicators with pulse animation) | Working |
+| Claim USDC trading fees (unstaked LT holders) | Working |
+| Claim sy-WBTC rewards (staked LT holders) | Working |
+| Collect fees from LEVAMM (permissionless) | Working |
+| Harvest fees to LT token (permissionless) | Working |
+| Faucet wBTC (in-widget + global menu) | Working |
+| Dynamic APR calculation (from on-chain data) | Working |
+| Yield simulation chart (24h, 3m, 6m, 1y) | Working |
+| Transaction history (localStorage, cross-component sync) | Working |
+| BTC price ticker (Binance real-time) | Working |
+| Wallet connect (ArgentX / Braavos) | Working |
+| Cross-chain swap (LiFi widget) | Working |
+| Partner logo carousel (Ekubo, Vesu, Starknet, Cairo, Pragma) | Working |
 
 ---
 
@@ -57,48 +330,147 @@ Governance (stubs)
 
 ```
 Starknet_hack/
-├── contracts/
-│   └── src/
-│       ├── vault/          VaultManager, SyBtcToken, MockWBTC, MockUSDC
-│       ├── strategy/       LeverageManager, ILEliminator
-│       ├── risk/           RiskManager
-│       ├── integrations/   Ekubo, Vesu, Pragma adapters + mocks
-│       ├── amm/            levamm.cairo   ← LEVAMM (2× bonding curve)
-│       ├── pool/           virtual_pool.cairo ← Flash-loan rebalancer
-│       ├── factory/        factory.cairo  ← Market registry
-│       ├── staker/         staker.cairo   ← syBTC staking → syYB
-│       ├── governance/     sy_yb_token, voting_escrow, gauge_controller, liquidity_gauge
-│       └── utils/          constants.cairo, math.cairo
-├── frontend/
-│   └── src/
-│       ├── hooks/          useVaultManager (deposit/withdraw/LEVAMM/Staker)
-│       ├── pages/          VaultPage (full UI)
-│       └── config/         constants.ts (contract addresses)
-└── scripts/                Deploy/redeploy scripts
++-- contracts/
+|   +-- src/
+|   |   +-- lib.cairo                        # Module exports
+|   |   +-- vault/
+|   |   |   +-- vault_manager.cairo          # Core deposit/withdraw with flash loans + CDP
+|   |   |   +-- lt_token.cairo               # LT shares (ERC20) + fee accumulator
+|   |   |   +-- mock_wbtc.cairo              # Mock wBTC (8 decimals, faucet)
+|   |   |   +-- mock_usdc.cairo              # Mock USDC (6 decimals, faucet)
+|   |   |
+|   |   +-- amm/
+|   |   |   +-- levamm.cairo                 # Constant Leverage AMM + active rebalancing
+|   |   |
+|   |   +-- pool/
+|   |   |   +-- virtual_pool.cairo           # Fee-less flash loan provider
+|   |   |
+|   |   +-- fees/
+|   |   |   +-- fee_distributor.cairo        # 50/50 split, dynamic admin fee, recovery mode
+|   |   |
+|   |   +-- integrations/
+|   |   |   +-- ekubo.cairo                  # Real Ekubo DEX adapter
+|   |   |   +-- ekubo_lp_wrapper.cairo       # ERC20 wrapper for Ekubo LP NFTs (Bunni)
+|   |   |   +-- vesu.cairo                   # Real Vesu lending adapter
+|   |   |   +-- pragma_oracle.cairo          # Real Pragma oracle adapter
+|   |   |   +-- mock_ekubo.cairo             # Mock Ekubo (multi-position LP)
+|   |   |   +-- mock_lending.cairo           # Mock Vesu (per-caller CDP isolation)
+|   |   |   +-- mock_pragma.cairo            # Mock Pragma oracle
+|   |   |   +-- ierc20.cairo                 # ERC20 interface
+|   |   |
+|   |   +-- staker/
+|   |   |   +-- staker.cairo                 # MasterChef: stake LT -> earn sy-WBTC
+|   |   |
+|   |   +-- governance/
+|   |   |   +-- sy_yb_token.cairo            # sy-WBTC governance token (ERC20)
+|   |   |   +-- voting_escrow.cairo          # Lock sy-WBTC -> veSyWBTC (linear decay, 4yr max)
+|   |   |   +-- gauge_controller.cairo       # Gauge voting with veSyWBTC balance check (v2)
+|   |   |   +-- liquidity_gauge.cairo        # MasterChef emission distribution
+|   |   |
+|   |   +-- risk/
+|   |   |   +-- risk_manager.cairo           # Health factor monitoring, withdrawal limits
+|   |   |
+|   |   +-- strategy/
+|   |   |   +-- il_eliminator.cairo          # IL monitoring (passive in 2x model)
+|   |   |
+|   |   +-- oracle/
+|   |   |   +-- lp_oracle.cairo              # LP token pricing
+|   |   |
+|   |   +-- utils/
+|   |       +-- constants.cairo              # Protocol constants (SCALE, DTV bands, fees)
+|   |       +-- math.cairo                   # Fixed-point math (mul, div, sqrt, min, max)
+|   |
+|   +-- tests/
+|       +-- test_integration.cairo            # Full system E2E (~30 scenarios, 906 lines)
+|       +-- test_ekubo_lp_wrapper.cairo       # EkuboLPWrapper Bunni tests (674 lines)
+|       +-- test_levamm.cairo                 # LEVAMM + active rebalancing (770 lines)
+|       +-- test_fee_distributor.cairo        # Fee split, admin fee, recovery mode (368 lines)
+|       +-- test_governance.cairo             # VotingEscrow + GaugeController (327 lines)
+|       +-- test_staker.cairo                 # Staking MasterChef (242 lines)
+|       +-- test_vault_manager.cairo          # Vault deposit/withdraw/pause (205 lines)
+|       +-- test_math.cairo                   # Fixed-point arithmetic
+|       +-- test_risk_manager.cairo           # Risk monitoring
+|       +-- test_il_eliminator.cairo          # IL tracking
+|
++-- frontend/
+|   +-- src/
+|   |   +-- App.tsx                           # Main router + layout + partner logos
+|   |   +-- main.tsx                          # React entry point
+|   |   +-- providers/
+|   |   |   +-- StarknetProvider.tsx          # Starknet React wrapper + RPC config
+|   |   +-- pages/
+|   |   |   +-- VaultPage.tsx                 # Main DeFi vault interface (~1200 lines)
+|   |   |   +-- VaultPage.css                 # Vault styling (tx flow, charts, positions)
+|   |   |   +-- SwapPage.tsx                  # LiFi cross-chain swap widget
+|   |   |   +-- ResourcesPage.tsx             # Documentation
+|   |   |   +-- TeamPage.tsx                  # Team profiles
+|   |   |
+|   |   +-- hooks/
+|   |   |   +-- useVaultManager.ts            # Contract interactions (all read/write ops)
+|   |   |   +-- useBTCPrice.ts                # Binance BTC price + 24h change
+|   |   |   +-- useToast.ts                   # Toast notification system
+|   |   |
+|   |   +-- config/
+|   |   |   +-- constants.ts                  # Contract addresses, decimals, network config
+|   |   |
+|   |   +-- components/
+|   |   |   +-- landing/                      # Hero, FeaturesSection
+|   |   |   +-- wallet/                       # WalletModal, AccountMenu
+|   |   |   +-- layout/                       # StaggeredMenu (hamburger nav)
+|   |   |   +-- ui/                           # Toast, LoadingScreen, LogoLoop, StarBorder, icons
+|   |   |
+|   |   +-- lib/
+|   |   |   +-- utils.ts                      # Generic utilities (cn, clsx)
+|   |   +-- assets/                           # Logos, icons, videos
+|   |
+|   +-- package.json
+|   +-- vite.config.ts
+|   +-- index.html
+|
++-- scripts/
+|   +-- deploy_all.sh                         # Master deployment (correct order + wiring)
+|   +-- deploy_v12.sh                         # v12 contracts deployment
+|   +-- deploy_v6.sh                          # v6 LEVAMM/Staker deployment
+|   +-- redeploy_v12.sh                       # v12 redeployment
+|   +-- redeploy_staker_and_swap.sh           # Current active script
+|   +-- fund_vpool.sh                         # Fund VirtualPool with USDC
+|   +-- [other utility scripts]
+|
++-- README.md                                 # This file
++-- CHANGEMENTS.md                            # Refactoring spec (FlowBasis -> StarkYield)
++-- A_FAIRE.md                                # TODO / audit tracker
 ```
 
 ---
 
-## Deployed Contracts — Sepolia
+## Deployed Contracts — Starknet Sepolia
 
-### v5 (working deposit/withdraw, LM=0 fallback)
-
-| Contract | Address |
-|---|---|
-| VaultManager | `0x040489e90e3cafad2446fecb229bc06fea17f535788135469f12a15b983ef976` |
-| SyBtcToken | `0x076cb4dadb2db9a95072ecffbb67a61076e642eced3d7f37361ff6f202018be3` |
-| MockWBTC (faucet) | `0x066cd5e247ef08479917e46a387057706aeb57cfc5bfa27b225352b304424163` |
-| MockUSDC | `0x023e418680b7210d7e3c3307a5e02f4b326201dbd6b9bf0c28e95a4cedaecfeb` |
-
-### v6 (LEVAMM + VirtualPool + Staker + Governance — deployed 2026-02-27)
+### v12 (current)
 
 | Contract | Address |
-|---|---|
-| Factory | `0x0253d30100bd7cbbc2bf146bdddcbb4adfc0cae0dc3d2a3ab172a1b4e21c8780` |
+|----------|---------|
+| VaultManager | `0x07af1ee2343f2710ac9b7544f0714adf1df292e7e98fece42b3a3e64fe27a3e9` |
+| LT Token | `0x018a65f5987d06a1e6d537a50ed7c8e4ea5869722f0f3772551e25f81efd4406` |
+| VirtualPool | `0x034bbd3d99c00f36773e712bbb8cba7022ee97746326cffda0af1c2efcb1a3c3` |
+| MockEkuboAdapter | `0x06c9c6ce0219d849675c1399a996908ced01aa8ec6660b09ab10bb2276908c48` |
+| MockLendingAdapter | `0x0014c719633c27561470a0b507c4b1458766c6fa4d2b70f979679339e9edb3c7` |
+| EkuboLPWrapper | `0x00d65a42e2aae825d3065a1693c5ede2e7ee31a1a7dfe8f44e9e1fb73e6f34bb` |
+| GaugeController | `0x06a2b1f4a3e58cb0ad7a71f94e7fbfabd975f94863f68401c97019a4c0d567d2` |
+
+### Tokens (v12)
+
+| Token | Address | Decimals |
+|-------|---------|----------|
+| MockWBTC | `0x01299997532891f6cb0088b5c779138f98f29d5a03e23e9611fad7071dffd89b` | 8 |
+| MockUSDC | `0x02ada118d8ec35abdf936f2d2f93cbe0d4fc66bd16bb51ef3b4f2baf20d32306` | 6 |
+
+### v6 (LEVAMM + Staker + Governance)
+
+| Contract | Address |
+|----------|---------|
 | LevAMM | `0x0623647a3e0f7f7a7aa0061a692c4e64e916dd853e0d71624da95f4076fff4af` |
-| VirtualPool | `0x00f720c999fdedd3d4a1e393dda0ce1a4e5b0bf079a8608d61f19ba5e77a190c` |
 | Staker | `0x04620f57ef40e7e2293ca6d06153930697bcb88d173f1634ba5cff768acec273` |
-| SyYbToken | `0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e` |
+| SyYbToken (sy-WBTC) | `0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e` |
 
 ---
 
@@ -110,57 +482,125 @@ Starknet_hack/
 cd frontend
 npm install
 npm run dev
-# Visit http://localhost:3000
+# Visit http://localhost:5173
 ```
 
-Connect Argent or Braavos wallet on Starknet Sepolia, then:
-1. **Faucet** — get testnet wBTC
-2. **Deposit** — specify amount → approve + deposit
-3. **Withdraw** — specify amount to redeem
+Connect ArgentX or Braavos wallet on Starknet Sepolia, then:
 
-### Contracts (requires Scarb + sncast in WSL)
+1. **Faucet** — mint testnet wBTC (from vault widget or hamburger menu)
+2. **Deposit** — approve + deposit wBTC into Yield Bearing Vault -> receive LT shares
+3. **Withdraw** — burn LT shares to get wBTC back
+4. **Stake** — switch to Staked Vault, deposit wBTC directly (auto deposit+stake in one multicall)
+5. **Unstake** — unstake + withdraw wBTC in one click
+6. **Claim Fees** — claim accumulated USDC trading fees (unstaked LT holders)
+7. **Claim Rewards** — claim sy-WBTC emissions (staked LT holders)
+8. **Collect / Harvest** — trigger fee collection from LEVAMM and distribution to LT token (permissionless)
+
+### Contracts
 
 ```bash
 cd contracts
-scarb build
+scarb build         # Compile Cairo contracts
+snforge test        # Run all tests (~3500 lines across 11 suites)
 ```
 
----
+### Deploy
 
-## LEVAMM Math
+```bash
+# 1. Build and declare
+cd contracts && scarb build
+sncast --account sepolia declare --contract-name VaultManager
+# ... declare all contracts
 
+# 2. Deploy + wire everything
+sed -i 's/\r$//' scripts/deploy_all.sh
+# Update CLASS HASHES in the script
+bash scripts/deploy_all.sh
+
+# 3. Fund VirtualPool
+sncast --account sepolia invoke --contract-address $VPOOL --function fund --arguments "1000000000000"
+
+# 4. Update frontend addresses
+# Copy output addresses into frontend/src/config/constants.ts
 ```
-LEV_RATIO = (L/(L+1))^2 = (2/3)^2 = 4/9   (for L=2)
-
-x0 = (C + sqrt(C^2 - 4·C·LEV_RATIO·D)) / (2·LEV_RATIO)
-
-Invariant I(p0) = (x0 - d_btc) · y
-
-Safety bands: DTV ∈ [6.25%, 53.125%]
-```
-
-Where:
-- `C` = collateral value (USDC, 1e18)
-- `D` = debt (USDC, 1e18)
-- `d_btc` = D / BTC_price (debt in BTC units)
-- `y` = collateral value (= C at initialization)
 
 ---
 
 ## Tech Stack
 
-| Component | Tech |
-|---|---|
-| Smart Contracts | Cairo 2, Scarb, OpenZeppelin Cairo |
-| DEX | Ekubo (BTC/USDC pool) |
-| Lending | Vesu (CDP: LP collateral → USDC borrow) |
-| Oracle | Pragma Network (BTC/USD) |
-| Rebalancing | Arbitrageurs via VirtualPool (atomic flash loans) |
-| Frontend | Next.js 14, starknet-react, starknet.js |
+| Component | Technology |
+|-----------|------------|
+| Smart Contracts | Cairo 2.6+, Scarb, OpenZeppelin Cairo |
+| Testing | Starknet Foundry (snforge v0.56+), ~3500 lines, 11 test suites |
+| DEX | Ekubo Protocol (BTC/USDC pool) |
+| Lending | Vesu (CDP: LP collateral -> USDC borrow) |
+| Oracle | Pragma Network (BTC/USD feed) |
+| LP Wrapping | EkuboLPWrapper (Bunni-inspired NFT -> ERC20) |
+| Rebalancing | Active CDP rebalancing via VirtualPool flash loans |
+| Frontend | React 19, Vite 7, TypeScript |
+| Wallet | starknet-react, starknet.js v6 |
+| Animations | GSAP, Framer Motion, OGL (WebGL background) |
+| Charts | Recharts |
+| Styling | Tailwind CSS + custom CSS modules |
+| Cross-chain | LiFi Widget (swap page) |
 | Network | Starknet Sepolia |
+
+---
+
+## Protocol Compliance (95%)
+
+| Aspect | Status | Detail |
+|--------|--------|--------|
+| CDP + Leveraged LP | Done | Flash loan -> LP -> collateral -> borrow -> repay |
+| LT Token (yield-bearing) | Done | Shares + fee accumulator (MasterChef pattern) |
+| Fee split 50/50 | Done | 50% recycle pool, 50% via FeeDistributor |
+| Dynamic admin fee | Done | `f_a = 1 - (1 - 0.10) * sqrt(1 - s/T)` |
+| Recovery mode / HWM | Done | 100% fees -> restoration when under high watermark |
+| Staked vs Unstaked | Done | Emissions (sy-WBTC) vs trading fees (USDC) |
+| Governance (veToken) | Done | VotingEscrow + GaugeController + LiquidityGauge |
+| EkuboLPWrapper | Done | Starknet adaptation: LP NFTs -> fungible ERC-20 |
+| APR formula | Done | `2*r_pool - (r_borrow + r_releverage)` time-normalized |
+| Active rebalancing | Done | `_rebalance_cdp()` after each swap via flash loans |
+
+### Design choices
+
+- Fees distributed in USDC (not BTC) — simplifies logic
+- veSyWBTC non-transferable
+- No max-lock / permalock option
+- Instantaneous fee distribution (not weekly epochs)
+
+---
+
+## Tests
+
+| Test Suite | Coverage | Lines |
+|-----------|----------|-------|
+| `test_integration.cairo` | Full system E2E (~30 scenarios) | 906 |
+| `test_levamm.cairo` | LEVAMM swap, DTV, rebalancing, fees | 770 |
+| `test_ekubo_lp_wrapper.cairo` | LP wrapping, Bunni share pricing | 674 |
+| `test_fee_distributor.cairo` | Fee distribution, admin fee, recovery mode | 368 |
+| `test_governance.cairo` | VotingEscrow, GaugeController voting | 327 |
+| `test_staker.cairo` | Stake, unstake, rewards, rate changes | 242 |
+| `test_vault_manager.cairo` | Vault deposit/withdraw/pause | 205 |
+| `test_math.cairo` | Fixed-point arithmetic | - |
+| `test_risk_manager.cairo` | Health checks, deleverage | - |
+| `test_il_eliminator.cairo` | IL monitoring | - |
 
 ---
 
 ## Hackathon
 
-Built for the Starknet hackathon. Demonstrates an IL-free BTC yield strategy using 2× leveraged liquidity, a Constant Leverage AMM (LEVAMM), atomic VirtualPool rebalancing, and a syYB governance token system.
+Built for the Starknet hackathon. Implements an IL-free BTC yield strategy on Starknet with Cairo smart contracts.
+
+### Key Innovations
+
+- **Mathematical IL elimination** via 2x leveraged LP — V(p) = p, not sqrt(p)
+- **Active CDP rebalancing** — DTV restored to 50% after every swap using flash loans
+- **EkuboLPWrapper** — ERC20 wrapper for Ekubo LP NFTs enabling DeFi composability (Bunni-inspired)
+- **Fee-less flash loans** via VirtualPool for gas-efficient deposit/withdraw/rebalancing
+- **LEVAMM bonding curve** with DTV safety bands [6.25%, 53.125%]
+- **Dynamic fee model** — 50/50 split, f_a = 1-(1-f_min)*sqrt(1-s/T), recovery mode with High Watermark
+- **Full governance stack** — sy-WBTC token, VotingEscrow (veSyWBTC), GaugeController v2, LiquidityGauge
+- **Multi-position LP** — per-token_id tracking in MockEkubo, per-caller CDP isolation in MockLending
+- **One-click staking** — deposit wBTC + stake in one multicall transaction (depositAndStake)
+- **Comprehensive test suite** — ~3500 lines across 11 test suites covering all contract interactions

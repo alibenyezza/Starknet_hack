@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# YieldBasis v10 — Redeploy changed contracts only
+# StarkYield v10 — Redeploy changed contracts only
 #
 # CHANGED  : MockLendingAdapter (events), VaultManager (flash loan wired)
 # UNCHANGED: MockEkubo, VirtualPool, MockWBTC, MockUSDC
@@ -32,7 +32,7 @@ VIRTUAL_POOL="0x0460d5b3cf27cbf296495c22301badd05a68c50c416036c7ed33c5454eed5f55
 WAIT_TIME=45
 
 echo -e "${BLUE}============================================================${NC}"
-echo -e "${BLUE}      YieldBasis v10 — Partial Redeploy${NC}"
+echo -e "${BLUE}      StarkYield v10 — Partial Redeploy${NC}"
 echo -e "${BLUE}============================================================${NC}"
 echo -e "${CYAN}Keeping: MockEkubo, VirtualPool, MockWBTC, MockUSDC${NC}"
 echo -e "${CYAN}Redeploying: MockLendingAdapter + LtToken + VaultManager${NC}"
@@ -85,7 +85,7 @@ sleep $WAIT_TIME
 LT_DEPLOY=$(sncast --account "$SNCAST_ACCOUNT" \
     deploy --network sepolia \
     --class-hash "$LT_CLASS" \
-    --arguments '"YieldBasis LT", "LT", '"$OWNER_ADDRESS" \
+    --arguments '"StarkYield LT", "LT", '"$OWNER_ADDRESS" \
     2>&1) || true
 echo "$LT_DEPLOY"
 NEW_LT=$(echo "$LT_DEPLOY" | grep -oP 'contract_address:\s+\K0x[0-9a-fA-F]+' \

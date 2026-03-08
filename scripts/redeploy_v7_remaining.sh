@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# YieldBasis v7 — Continue from step 4 (VirtualPool + VaultManager)
+# StarkYield v7 — Continue from step 4 (VirtualPool + VaultManager)
 #
 # Steps 1-3 already completed:
 #   MockEkuboAdapter:   0x01f46c9c60dca701db51acfdbd17279145f56446d979ec93d1c63a564b18e1a5
@@ -52,7 +52,7 @@ get_address() {
     || echo ""
 }
 
-echo -e "${BLUE}=== YieldBasis v7 — Remaining steps (4 + 5 + 6) ===${NC}"
+echo -e "${BLUE}=== StarkYield v7 — Remaining steps (4 + 5 + 6) ===${NC}"
 echo ""
 
 # ============================================================

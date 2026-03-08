@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# YieldBasis v12 — Deploy remaining 7 contracts
+# StarkYield v12 — Deploy remaining 7 contracts
 # Fix: explicit --nonce to avoid stale RPC nonce issue
 #
 # sed -i 's/\r$//' /mnt/c/Users/byezz/Desktop/starknethackathon/lastupdate/Starknet_hack/scripts/deploy_only_v12.sh
@@ -72,7 +72,7 @@ echo "[5/9] Deploying LtToken (nonce=$NONCE)..."
 sncast --account "$ACC" \
     deploy --network sepolia \
     --class-hash "$LT_CLASS" \
-    --arguments "\"YieldBasis LT\", \"LT\", $OWNER" \
+    --arguments "\"StarkYield LT\", \"LT\", $OWNER" \
     --nonce "$NONCE" \
     2>&1 | tee "$TMP"
 LT=$(grep -oiP 'Contract Address:\s+\K0x[0-9a-fA-F]+' "$TMP")

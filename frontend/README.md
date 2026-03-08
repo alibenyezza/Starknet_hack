@@ -6,7 +6,7 @@ A modern, elegant frontend for StarkYield built with React, TypeScript, and Tail
 
 ## Features
 
-- 🎨 Clean, minimalist design inspired by yieldbasis.com
+- 🎨 Clean, minimalist design
 - ⚡ Built on Starknet for low gas fees and high security
 - 🔐 ArgentX wallet integration
 - 📊 Real-time analytics and performance tracking

@@ -15,12 +15,12 @@ export const CONTRACTS = {
   // ── New v12 contracts ─────────────────────────────────────────────────────
   EKUBO_LP_WRAPPER:  '0x00d65a42e2aae825d3065a1693c5ede2e7ee31a1a7dfe8f44e9e1fb73e6f34bb',
   GAUGE_CONTROLLER:  '0x06a2b1f4a3e58cb0ad7a71f94e7fbfabd975f94863f68401c97019a4c0d567d2',
+  FEE_DISTRIBUTOR:   '0x0' + '0'.repeat(62), // TODO: update after deploy_all.sh
 
   // ── v6 (kept for reference / Staker / LevAMM UI) ─────────────────────────
-  FACTORY:       '0x0253d30100bd7cbbc2bf146bdddcbb4adfc0cae0dc3d2a3ab172a1b4e21c8780',
   LEVAMM:        '0x0623647a3e0f7f7a7aa0061a692c4e64e916dd853e0d71624da95f4076fff4af',
   STAKER:        '0x04620f57ef40e7e2293ca6d06153930697bcb88d173f1634ba5cff768acec273',
-  SY_YB_TOKEN:   '0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e',
+  SY_YB_TOKEN:   '0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e', // sy-WBTC token
   SY_BTC_TOKEN:  '0x076cb4dadb2db9a95072ecffbb67a61076e642eced3d7f37361ff6f202018be3',
 } as const;
 

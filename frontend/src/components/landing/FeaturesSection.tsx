@@ -24,7 +24,7 @@ const features = [
     num: '04',
     title: 'Stake and Compound',
     description:
-      'Stake your syBTC shares in the Staker contract to earn additional protocol rewards. Claim anytime, unstake anytime. Everything runs on Cairo smart contracts verified by Starknet ZK proofs. Fully non-custodial, fully transparent.',
+      'Stake your wBTC directly — the protocol auto-deposits and stakes in a single transaction. Earn additional protocol rewards on top of base vault yield. Unstake and withdraw your wBTC in one click. Fully non-custodial, fully transparent, powered by Cairo smart contracts on Starknet.',
   },
 ];
 

@@ -122,18 +122,18 @@ const docsTree: DocItem[] = [
       },
       {
         id: 'staking',
-        label: '4. Stake syBTC',
+        label: '4. Stake wBTC',
         content: {
-          title: 'Stake Your Vault Shares',
-          body: 'Stake your syBTC shares in the Staker contract to earn additional protocol rewards on top of the base vault yield. This is optional but compounds your returns.',
+          title: 'Stake wBTC Directly',
+          body: 'Stake your wBTC directly into the Staked Vault to earn additional protocol rewards on top of the base vault yield. The protocol handles the deposit and stake in a single multicall transaction — no need to manually deposit first.',
           subsections: [
             {
               title: 'Staking Details',
               items: [
-                'Stake any amount of syBTC shares to earn extra protocol rewards',
+                'Deposit wBTC directly — the protocol performs deposit + stake via a single multicall (depositAndStake)',
                 'Rewards accumulate per block and can be claimed at any time',
-                'Unstake your shares at any time with no lock-up period',
-                'Your staked shares continue earning base vault yield while also earning staking rewards',
+                'Unstake and withdraw your wBTC in one click with no lock-up period',
+                'Your staked position continues earning base vault yield while also earning staking rewards',
               ],
             },
           ],
@@ -152,7 +152,7 @@ const docsTree: DocItem[] = [
                 'No lock-up period. Withdraw at any time',
                 'Minimum withdrawal: 0.001 BTC',
                 'Share redemption at current share price (principal + yield)',
-                'If you have staked shares, unstake first then withdraw',
+                'Use "Unstake wBTC" from the Staked Vault to unstake and withdraw in one transaction',
                 'Gas fees paid in ETH on Starknet',
               ],
             },
@@ -223,12 +223,13 @@ const docsTree: DocItem[] = [
         {
           title: 'Staker',
           items: [
-            'stake(amount): Stake syBTC shares to earn rewards',
-            'unstake(amount): Unstake syBTC shares',
+            'stake(amount): Stake LT shares to earn rewards',
+            'unstake(amount): Unstake LT shares',
             'claim_rewards(): Claim accumulated staking rewards',
             'get_staked_balance(addr): Returns staked balance for a given address (view)',
             'pending_rewards(addr): Returns unclaimed rewards for a given address (view)',
-            'get_total_staked(): Returns total syBTC staked across all users (view)',
+            'get_total_staked(): Returns total LT staked across all users (view)',
+            'Note: The frontend uses a multicall depositAndStake flow — deposit wBTC into the vault then stake the resulting LT shares in a single transaction',
           ],
         },
       ],

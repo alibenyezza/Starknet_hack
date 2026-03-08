@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# YieldBasis v10 — Deploy VaultManager only (step 3+4 of redeploy_v10)
+# StarkYield v10 — Deploy VaultManager only (step 3+4 of redeploy_v10)
 #
 # Run AFTER recharging ETH Sepolia on the owner account.
 #

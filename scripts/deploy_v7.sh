@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# YieldBasis v7 — Full redeployment: MockEkubo + MockLending
+# StarkYield v7 — Full redeployment: MockEkubo + MockLending
 #                 + LtToken + VirtualPool + VaultManager
 #
 # What changed vs v6:
@@ -8,7 +8,7 @@
 #   - MockLendingAdapter: new IMockLendingLP interface (deposit_collateral_lp, etc.)
 #   - LtToken:            new contract (replaces SyBtcToken as vault share)
 #   - VirtualPool:        new flash_loan / repay_flash_loan functions
-#   - VaultManager:       full YieldBasis rewrite (CDP + flash loan flow)
+#   - VaultManager:       full StarkYield rewrite (CDP + flash loan flow)
 #
 # Usage (from WSL):
 #   cd /mnt/c/Users/byezz/Desktop/starknethackathon/nouveaupush_starknet/Starknet_hack/contracts
@@ -52,7 +52,7 @@ get_address() {
     || echo ""
 }
 
-echo -e "${BLUE}=== YieldBasis v7 Deployment ===${NC}"
+echo -e "${BLUE}=== StarkYield v7 Deployment ===${NC}"
 echo ""
 
 # ============================================================
@@ -113,7 +113,7 @@ echo -e "${GREEN}[3/5] Deploying LtToken...${NC}"
 sncast --account "$SNCAST_ACCOUNT" \
     deploy --network sepolia \
     --class-hash "$LT_CLASS" \
-    --arguments "\"YieldBasis LT\", \"LT\", $OWNER_ADDRESS" \
+    --arguments "\"StarkYield LT\", \"LT\", $OWNER_ADDRESS" \
     2>&1 | tee "$TMP" || true
 LT_TOKEN=$(get_address); echo -e "${GREEN}LtToken: $LT_TOKEN${NC}"
 sleep $WAIT_TIME
@@ -142,7 +142,7 @@ sleep $WAIT_TIME
 echo ""
 
 # ============================================================
-# 5. VaultManager  (YieldBasis core: CDP + flash-loan deposit/withdraw)
+# 5. VaultManager  (StarkYield core: CDP + flash-loan deposit/withdraw)
 #    constructor(btc_token, usdc_token, lt_token, ekubo_adapter,
 #                lending_adapter, virtual_pool, pragma_adapter, owner)
 # ============================================================
@@ -183,7 +183,7 @@ rm -f "$TMP"
 # Summary
 # ============================================================
 echo -e "${BLUE}============================================${NC}"
-echo -e "${GREEN}    DEPLOYMENT v7 COMPLETE (YieldBasis)${NC}"
+echo -e "${GREEN}    DEPLOYMENT v7 COMPLETE (StarkYield)${NC}"
 echo -e "${BLUE}============================================${NC}"
 echo ""
 echo -e "MockEkuboAdapter:   ${YELLOW}$MOCK_EKUBO_ADAPTER${NC}"

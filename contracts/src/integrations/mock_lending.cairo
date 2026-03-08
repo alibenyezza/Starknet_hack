@@ -19,7 +19,7 @@ pub trait IMockLendingAdmin<TContractState> {
     fn set_ekubo_adapter(ref self: TContractState, ekubo_adapter: ContractAddress);
 }
 
-/// LP collateral interface (YieldBasis extension)
+/// LP collateral interface (StarkYield extension)
 #[starknet::interface]
 pub trait IMockLendingLP<TContractState> {
     /// Records LP token ID as CDP collateral (mock: no NFT transfer needed).
@@ -43,6 +43,7 @@ pub mod MockLendingAdapter {
     use starkyield::integrations::ierc20::{IERC20Dispatcher, IERC20DispatcherTrait};
     use starkyield::integrations::mock_ekubo::{IMockEkuboLPDispatcher, IMockEkuboLPDispatcherTrait};
     use starknet::get_caller_address;
+    use starknet::storage::Map;
 
     #[storage]
     struct Storage {
@@ -52,8 +53,8 @@ pub mod MockLendingAdapter {
         ekubo_adapter: ContractAddress,
         collateral_balance: u256,
         debt_balance: u256,
-        /// LP token ID used as CDP collateral (YieldBasis flow)
-        lp_token_id: felt252,
+        /// Per-caller LP token ID — isolates CDP positions per contract (VaultManager vs LEVAMM)
+        caller_lp_ids: Map<ContractAddress, felt252>,
         owner: ContractAddress,
     }
 
@@ -113,7 +114,7 @@ pub mod MockLendingAdapter {
 
         /// Simulate borrowing:
         /// 1. Mint USDC to self via MockUSDC public faucet
-        /// 2. Forward USDC to caller (YieldBasis: VaultManager repays flash loan)
+        /// 2. Forward USDC to caller (StarkYield: VaultManager repays flash loan)
         fn borrow_usdc(ref self: ContractState, usdc_amount: u256) {
             if usdc_amount == 0 {
                 return;
@@ -162,23 +163,27 @@ pub mod MockLendingAdapter {
 
     #[abi(embed_v0)]
     impl MockLendingLPImpl of IMockLendingLP<ContractState> {
-        /// Records LP token ID as CDP collateral (mock: no NFT transfer needed).
+        /// Records LP token ID as CDP collateral — per-caller isolation.
+        /// VaultManager and LEVAMM each get their own LP slot.
         fn deposit_collateral_lp(ref self: ContractState, lp_id: felt252) {
-            self.lp_token_id.write(lp_id);
+            let caller = get_caller_address();
+            self.caller_lp_ids.write(caller, lp_id);
             self.emit(CollateralLPDeposited { lp_id });
         }
 
-        /// Returns stored LP token ID and clears it.
+        /// Returns stored LP token ID for caller and clears it.
         fn withdraw_collateral_lp(ref self: ContractState) -> felt252 {
-            let lp_id = self.lp_token_id.read();
-            self.lp_token_id.write(0);
+            let caller = get_caller_address();
+            let lp_id = self.caller_lp_ids.read(caller);
+            self.caller_lp_ids.write(caller, 0);
             self.emit(CollateralLPWithdrawn { lp_id });
             lp_id
         }
 
-        /// Queries LP value from MockEkubo using the stored LP token ID.
+        /// Queries LP value from MockEkubo using the caller's stored LP token ID.
         fn get_lp_collateral_value(self: @ContractState) -> u256 {
-            let lp_id = self.lp_token_id.read();
+            let caller = get_caller_address();
+            let lp_id = self.caller_lp_ids.read(caller);
             if lp_id == 0 {
                 return 0;
             }

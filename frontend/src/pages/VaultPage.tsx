@@ -55,25 +55,25 @@ function timeAgo(ts: number): string {
   return `${days}d ago`;
 }
 
-// Ekubo pool fee tier (0.3% per swap, annualized with estimated daily volume/TVL turnover)
-// In production this would come from Ekubo pool analytics API
+// StarkYield APR = 2 × r_pool − (r_borrow + r_volatility_decay)
+// Protocol constants (match smart contract values)
 
 type ChartPeriod = '24h' | '3m' | '6m' | '1y';
 
-function generateSimulationData(depositUSD: number, period: ChartPeriod, apy: number) {
+function generateSimulationData(depositUSD: number, period: ChartPeriod, apr: number) {
   if (period === '24h') {
     const HOURS_PER_YEAR = 8_760;
     const data = [];
     for (let i = 0; i <= 24; i++) {
       const fraction = i / HOURS_PER_YEAR;
-      const gain = depositUSD * (Math.pow(1 + apy / 100, fraction) - 1);
+      const gain = depositUSD * (Math.pow(1 + apr / 100, fraction) - 1);
       data.push({ x: i, gain: Math.max(0, gain) });
     }
     return data;
   }
 
   const months = period === '3m' ? 3 : period === '6m' ? 6 : 12;
-  const compoundMonthlyRate = Math.pow(1 + apy / 100, 1 / 12) - 1;
+  const compoundMonthlyRate = Math.pow(1 + apr / 100, 1 / 12) - 1;
   const data = [];
   for (let i = 0; i <= months; i++) {
     const gain = depositUSD * (Math.pow(1 + compoundMonthlyRate, i) - 1);
@@ -114,20 +114,57 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
   const [stakedAmount, setStakedAmount] = useState('');
   const [showStakedError, setShowStakedError] = useState(false);
 
-  // APY computed dynamically from on-chain vault data:
-  //   leverage = LP_value / equity
-  //   net APY = (base LP yield * leverage) - (borrow rate * debt/equity)
-  const activeAPY = useMemo(() => {
+  // ── Yield Bearing Vault APR (time-normalized: time-normalized all-time fees) ──
+  const BLOCKS_PER_YEAR = 5_256_000; // Starknet ~6s blocks
+  const yieldAPR = useMemo(() => {
     const { totalLpValue, totalDebt } = vault.vaultLpStats;
     if (totalLpValue <= 0) return 0;
+
     const equity = Math.max(totalLpValue - totalDebt, 1);
     const leverage = totalLpValue / equity;
-    // Base LP yield from Ekubo concentrated liquidity fees (BTC/USDC pair)
-    const baseLpYield = 2.8;    // % annualized from pool fee revenue
-    const borrowRate = 1.5;     // % cost of USDC borrowing via CDP
-    const netApy = (baseLpYield * leverage) - (borrowRate * (totalDebt / equity));
-    return Math.round(Math.max(netApy, 0) * 100) / 100;
-  }, [vault.vaultLpStats]);
+
+    // r_pool: time-normalized — use total_fees_generated (never resets)
+    // normalized by actual elapsed time since LEVAMM initialization.
+    // Formula: r_pool = (totalFees / collateral) × (BLOCKS_PER_YEAR / blocksSinceInit) × 100
+    const collateral = vault.levammStats.collateralValue;
+    const totalFees = vault.levammStats.totalFeesGenerated;
+    const initBlock = vault.levammStats.initBlock;
+    const curBlock = vault.currentBlock;
+    let r_pool: number;
+    if (collateral > 0 && totalFees > 0 && initBlock > 0 && curBlock > initBlock) {
+      const blocksSinceInit = curBlock - initBlock;
+      r_pool = (totalFees / collateral) * (BLOCKS_PER_YEAR / blocksSinceInit) * 100;
+    } else {
+      r_pool = 0;
+    }
+
+    // r_borrow: derive from accrued interest vs debt, same time normalization
+    const accInterest = vault.levammStats.accruedInterest;
+    let r_borrow: number;
+    if (totalDebt > 0 && accInterest > 0 && initBlock > 0 && curBlock > initBlock) {
+      const blocksSinceInit = curBlock - initBlock;
+      r_borrow = (accInterest / totalDebt) * (BLOCKS_PER_YEAR / blocksSinceInit) * 100;
+    } else {
+      r_borrow = 0;
+    }
+
+    // r_volatility_decay: rebalancing cost (rebalancing cost)
+    const r_volatility_decay = r_pool > 0 ? 0.5 : 0;
+
+    const netApr = leverage * r_pool - (r_borrow + r_volatility_decay);
+    return Math.round(Math.max(netApr, 0) * 100) / 100;
+  }, [vault.vaultLpStats, vault.levammStats, vault.currentBlock]);
+
+  // ── Staked Vault APR (sy-WBTC emissions from reward_rate) ──
+  const stakedAPR = useMemo(() => {
+    const rate = vault.stakerStats.rewardRate; // already fromWei'd (tokens per block)
+    if (rate <= 0) return 0;
+    const apr = rate * BLOCKS_PER_YEAR * 100;
+    return Math.round(apr * 100) / 100;
+  }, [vault.stakerStats.rewardRate]);
+
+  // ── Active APR depends on selected vault mode ──
+  const activeAPR = vaultMode === 'staked' ? stakedAPR : yieldAPR;
 
   const addTx = useCallback((type: TxType, txAmount: number, txHash?: string) => {
     const tx: VaultTx = { id: crypto.randomUUID(), type, amount: txAmount, txHash, timestamp: Date.now() };
@@ -145,6 +182,13 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
     return () => clearInterval(id);
   }, []);
 
+  // Sync transactions when faucet is triggered from the global menu
+  useEffect(() => {
+    const handler = () => setTransactions(loadTxs());
+    window.addEventListener('starkyield_tx_added', handler);
+    return () => window.removeEventListener('starkyield_tx_added', handler);
+  }, []);
+
   const numericAmount = parseFloat(amount) || 0;
   const numericStakedAmount = parseFloat(stakedAmount) || 0;
 
@@ -155,8 +199,8 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
     [dollarValue, vault.userDepositBTC, btcPrice]
   );
   const depositedUSD = useMemo(() => vault.userDepositBTC * btcPrice, [vault.userDepositBTC, btcPrice]);
-  const monthlyEarnings = useMemo(() => (depositedUSD * activeAPY) / 100 / 12, [depositedUSD, activeAPY]);
-  const yearlyEarnings = useMemo(() => (depositedUSD * activeAPY) / 100, [depositedUSD, activeAPY]);
+  const monthlyEarnings = useMemo(() => (depositedUSD * activeAPR) / 100 / 12, [depositedUSD, activeAPR]);
+  const yearlyEarnings = useMemo(() => (depositedUSD * activeAPR) / 100, [depositedUSD, activeAPR]);
 
   // Track elapsed time for 24h chart "Now" marker
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -223,12 +267,12 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
   const handleStakeAction = async () => {
     if (stakedTab === 'stake') {
       if (numericStakedAmount <= 0) return;
-      if (numericStakedAmount > vault.userDepositBTC) { setShowStakedError(true); return; }
+      if (numericStakedAmount > vault.wbtcBalance) { setShowStakedError(true); return; }
       setShowStakedError(false);
-      info('Staking LT — approve in your wallet…');
-      const res = await vault.stakeShares(numericStakedAmount);
+      info('Depositing & staking wBTC — approve in your wallet…');
+      const res = await vault.depositAndStake(numericStakedAmount);
       if (res?.success) {
-        success('LT staked successfully!', res.txHash ? { href: `${NETWORK.EXPLORER_URL}/tx/${res.txHash}`, label: `View tx on Voyager (${res.txHash.slice(0, 10)}…)` } : undefined);
+        success('wBTC deposited & staked!', res.txHash ? { href: `${NETWORK.EXPLORER_URL}/tx/${res.txHash}`, label: `View tx on Voyager (${res.txHash.slice(0, 10)}…)` } : undefined);
         setStakedAmount('');
       } else {
         toastError(`Stake failed: ${res?.error ?? 'unknown error'}`);
@@ -237,10 +281,10 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
       if (numericStakedAmount <= 0 || vault.stakerStats.userStaked === 0) return;
       if (numericStakedAmount > vault.stakerStats.userStaked) { setShowStakedError(true); return; }
       setShowStakedError(false);
-      info('Unstaking LT — approve in your wallet…');
-      const res = await vault.unstakeShares(numericStakedAmount);
+      info('Unstaking & withdrawing wBTC — approve in your wallet…');
+      const res = await vault.unstakeAndWithdraw(numericStakedAmount);
       if (res?.success) {
-        success('LT unstaked successfully!', res.txHash ? { href: `${NETWORK.EXPLORER_URL}/tx/${res.txHash}`, label: `View tx on Voyager (${res.txHash.slice(0, 10)}…)` } : undefined);
+        success('wBTC unstaked & withdrawn!', res.txHash ? { href: `${NETWORK.EXPLORER_URL}/tx/${res.txHash}`, label: `View tx on Voyager (${res.txHash.slice(0, 10)}…)` } : undefined);
         setStakedAmount('');
       } else {
         toastError(`Unstake failed: ${res?.error ?? 'unknown error'}`);
@@ -270,8 +314,8 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
       : numericStakedAmount <= 0 || vault.stakerStats.userStaked === 0 || vault.isUnstaking;
 
   const simulationData = useMemo(
-    () => generateSimulationData(simulationBase, chartPeriod, activeAPY),
-    [simulationBase, chartPeriod, activeAPY]
+    () => generateSimulationData(simulationBase, chartPeriod, activeAPR),
+    [simulationBase, chartPeriod, activeAPR]
   );
 
   const projectedGain = useMemo(() => {
@@ -281,9 +325,9 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
 
   // Staked balance depending on tab
   const stakedDisplayBalance = stakedTab === 'stake'
-    ? vault.userDepositBTC
+    ? vault.wbtcBalance
     : vault.stakerStats.userStaked;
-  const stakedBalanceLabel = stakedTab === 'stake' ? 'LT available' : 'LT staked';
+  const stakedBalanceLabel = stakedTab === 'stake' ? 'wBTC balance' : 'wBTC staked';
 
   return (
     <div className="vault-page">
@@ -414,8 +458,10 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                   <span className="vault-summary-value">{numericAmount.toFixed(2)}</span>
                 </div>
                 <div className="vault-summary-row">
-                  <span className="vault-summary-label">APY</span>
-                  <span className="vault-summary-value vault-apy">{activeAPY}%</span>
+                  <span className="vault-summary-label">APR</span>
+                  <span className="vault-summary-value vault-apy">
+                    {yieldAPR}%{yieldAPR === 0 && <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.75rem', marginLeft: '0.4rem' }}>(no trades)</span>}
+                  </span>
                 </div>
                 <div className="vault-summary-row">
                   <span className="vault-summary-label">Projected monthly earnings</span>
@@ -448,13 +494,116 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                         : 'Withdraw wBTC'}
               </button>
 
+              {/* ── Claimable Fees (LT holders) ── */}
+              {vault.claimableFees > 0 && (
+                <div style={{
+                  background: 'rgba(74,222,128,0.10)',
+                  border: '1px solid rgba(74,222,128,0.25)',
+                  borderRadius: '10px',
+                  padding: '0.75rem 1rem',
+                  marginTop: '0.75rem',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}>
+                  <div>
+                    <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '0.75rem' }}>Claimable Fees (USDC)</div>
+                    <div style={{ color: '#4ade80', fontWeight: 600, fontSize: '1.1rem' }}>
+                      ${vault.claimableFees.toFixed(2)}
+                    </div>
+                  </div>
+                  <button
+                    className="vault-max-btn"
+                    type="button"
+                    style={{
+                      background: '#4ade80',
+                      color: '#000',
+                      padding: '0.4rem 1rem',
+                      borderRadius: '8px',
+                      fontWeight: 600,
+                      fontSize: '0.85rem',
+                      opacity: vault.isClaimingFees ? 0.6 : 1,
+                    }}
+                    disabled={vault.isClaimingFees}
+                    onClick={async () => {
+                      const res = await vault.claimFees();
+                      if (res?.success) {
+                        success('USDC fees claimed!', res.txHash ? { href: `${NETWORK.EXPLORER_URL}/tx/${res.txHash}`, label: `View tx` } : undefined);
+                      } else {
+                        toastError(`Claim fees failed: ${res?.error ?? 'unknown'}`);
+                      }
+                    }}
+                  >
+                    {vault.isClaimingFees ? 'Claiming…' : 'Claim USDC'}
+                  </button>
+                </div>
+              )}
+
+              {/* ── Harvest Fees (permissionless) ── */}
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                <button
+                  className="vault-max-btn"
+                  type="button"
+                  style={{
+                    flex: 1,
+                    padding: '0.5rem',
+                    borderRadius: '8px',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    color: '#a78bfa',
+                    background: 'rgba(167,139,250,0.08)',
+                    border: '1px solid rgba(167,139,250,0.25)',
+                    opacity: vault.isCollectingFees ? 0.6 : 1,
+                  }}
+                  disabled={vault.isCollectingFees}
+                  onClick={async () => {
+                    info('Collecting trading fees…');
+                    const res = await vault.collectFees();
+                    if (res?.success) {
+                      success('Fees collected from LEVAMM!', res.txHash ? { href: `${NETWORK.EXPLORER_URL}/tx/${res.txHash}`, label: `View tx` } : undefined);
+                    } else {
+                      toastError(`Collect fees failed: ${res?.error ?? 'unknown'}`);
+                    }
+                  }}
+                >
+                  {vault.isCollectingFees ? 'Collecting…' : 'Collect Fees'}
+                </button>
+                {vault.accumulatedHolderFees > 0 && (
+                  <button
+                    className="vault-max-btn"
+                    type="button"
+                    style={{
+                      flex: 1,
+                      padding: '0.5rem',
+                      borderRadius: '8px',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      color: '#a78bfa',
+                      background: 'rgba(167,139,250,0.08)',
+                      border: '1px solid rgba(167,139,250,0.25)',
+                    }}
+                    onClick={async () => {
+                      info('Harvesting fees to LT holders…');
+                      const res = await vault.harvestFees();
+                      if (res?.success) {
+                        success('Fees distributed to LT token!', res.txHash ? { href: `${NETWORK.EXPLORER_URL}/tx/${res.txHash}`, label: `View tx` } : undefined);
+                      } else {
+                        toastError(`Harvest failed: ${res?.error ?? 'unknown'}`);
+                      }
+                    }}
+                  >
+                    Harvest (${vault.accumulatedHolderFees.toFixed(2)})
+                  </button>
+                )}
+              </div>
+
               <p className="vault-disclaimer">
                 Smart contracts are unaudited. Sepolia testnet only.{' '}
                 <a
                   href={`${NETWORK.EXPLORER_URL}/contract/${CONTRACTS.VAULT_MANAGER}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ color: 'rgba(100,100,255,0.7)', textDecoration: 'underline' }}
+                  style={{ color: 'rgba(167,139,250,0.7)', textDecoration: 'underline' }}
                 >
                   Verify on Voyager ↗
                 </a>
@@ -483,13 +632,13 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                 </button>
               </div>
 
-              {/* Rewards banner removed — no syYB rewards in v12 */}
+              {/* Rewards banner removed — no sy-WBTC rewards in v12 */}
 
               {/* Input */}
               <div className="vault-input-card">
                 <div className="vault-input-header">
                   <span className="vault-input-title">
-                    {stakedTab === 'stake' ? 'Stake LT tokens' : 'Unstake LT tokens'}
+                    {stakedTab === 'stake' ? 'Stake wBTC' : 'Unstake wBTC'}
                   </span>
                 </div>
                 <div className="vault-input-field">
@@ -517,6 +666,17 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                     >
                       MAX
                     </button>
+                    {stakedTab === 'stake' && (
+                      <button
+                        className="vault-max-btn"
+                        type="button"
+                        onClick={handleFaucet}
+                        disabled={vault.isFauceting}
+                        style={{ marginLeft: '0.4rem', opacity: vault.isFauceting ? 0.6 : 1 }}
+                      >
+                        {vault.isFauceting ? 'Minting…' : 'Faucet +1 wBTC'}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -530,8 +690,8 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                   </svg>
                   <span>
                     {stakedTab === 'stake'
-                      ? `Insufficient LT balance. You have ${vault.userDepositBTC.toFixed(4)} LT available.`
-                      : `You only have ${vault.stakerStats.userStaked.toFixed(4)} LT staked.`}
+                      ? `Insufficient wBTC balance. You have ${vault.wbtcBalance.toFixed(4)} wBTC available.`
+                      : `You only have ${vault.stakerStats.userStaked.toFixed(4)} wBTC staked.`}
                   </span>
                 </div>
               )}
@@ -539,19 +699,25 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
               {/* Staking summary */}
               <div className="vault-summary">
                 <div className="vault-summary-row">
-                  <span className="vault-summary-label">APY (base + staking)</span>
-                  <span className="vault-summary-value vault-apy">{activeAPY}%</span>
+                  <span className="vault-summary-label">APR <span style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.75rem' }}>(sy-WBTC emissions)</span></span>
+                  <span className="vault-summary-value vault-apy">{stakedAPR}%</span>
                 </div>
                 <div className="vault-summary-row">
-                  <span className="vault-summary-label">Your staked LT</span>
+                  <span className="vault-summary-label">Your staked position</span>
                   <span className="vault-summary-value">
-                    {vault.stakerStats.userStaked.toFixed(4)} LT
+                    {vault.stakerStats.userStaked.toFixed(4)} wBTC
+                  </span>
+                </div>
+                <div className="vault-summary-row">
+                  <span className="vault-summary-label">Pending rewards</span>
+                  <span className="vault-summary-value" style={{ color: vault.stakerStats.pendingRewards > 0.000001 ? '#a78bfa' : undefined }}>
+                    {vault.stakerStats.pendingRewards.toFixed(6)} sy-WBTC
                   </span>
                 </div>
                 <div className="vault-summary-row">
                   <span className="vault-summary-label">Total staked (protocol)</span>
                   <span className="vault-summary-value">
-                    {vault.stakerStats.totalStaked.toFixed(4)} LT
+                    {vault.stakerStats.totalStaked.toFixed(4)} wBTC
                   </span>
                 </div>
               </div>
@@ -569,13 +735,45 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                     : isStakeDisabled
                       ? stakedTab === 'stake' ? 'Enter an amount' : 'Nothing to unstake'
                       : stakedTab === 'stake'
-                        ? 'Stake LT'
-                        : 'Unstake LT'}
+                        ? 'Stake wBTC'
+                        : 'Unstake wBTC'}
               </button>
+
+              {/* ── Claim Rewards (same position as Collect Fees in yield vault) ── */}
+              {vault.stakerStats.pendingRewards > 0.000001 && (
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                  <button
+                    className="vault-max-btn"
+                    type="button"
+                    style={{
+                      flex: 1,
+                      padding: '0.5rem',
+                      borderRadius: '8px',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      color: '#a78bfa',
+                      background: 'rgba(167,139,250,0.08)',
+                      border: '1px solid rgba(167,139,250,0.25)',
+                      opacity: vault.isClaimingRewards ? 0.6 : 1,
+                    }}
+                    disabled={vault.isClaimingRewards}
+                    onClick={async () => {
+                      const res = await vault.claimRewards();
+                      if (res?.success) {
+                        success('sy-WBTC rewards claimed!', res.txHash ? { href: `${NETWORK.EXPLORER_URL}/tx/${res.txHash}`, label: `View tx` } : undefined);
+                      } else {
+                        toastError(`Claim failed: ${res?.error ?? 'unknown'}`);
+                      }
+                    }}
+                  >
+                    {vault.isClaimingRewards ? 'Claiming…' : `Claim Rewards (${vault.stakerStats.pendingRewards.toFixed(6)} sy-WBTC)`}
+                  </button>
+                </div>
+              )}
 
               {vault.stakerStats.userStaked === 0 && (
                 <p className="vault-disclaimer">
-                  Deposit wBTC first to receive LT tokens, then stake them here to boost your yield.
+                  Stake wBTC to earn sy-WBTC emissions and boost your yield.
                 </p>
               )}
 
@@ -585,7 +783,7 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                   href={`${NETWORK.EXPLORER_URL}/contract/${CONTRACTS.STAKER}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{ color: 'rgba(100,100,255,0.7)', textDecoration: 'underline' }}
+                  style={{ color: 'rgba(167,139,250,0.7)', textDecoration: 'underline' }}
                 >
                   Verify on Voyager ↗
                 </a>
@@ -631,7 +829,7 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                       : vault.userDepositBTC.toFixed(6))}
               </span>
               <span className="vault-position-currency">
-                {displayCurrency === 'USD' ? '' : (vaultMode === 'staked' ? 'LT' : 'wBTC')}
+                {displayCurrency === 'USD' ? '' : 'wBTC'}
               </span>
             </div>
 
@@ -754,7 +952,7 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                     />
                     <Tooltip
                       contentStyle={{ background: 'rgba(20,20,30,0.95)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '8px', color: '#fff', fontSize: '0.8rem' }}
-                      formatter={(value: number) => [fmtDollar(value), `Yield earned (${activeAPY}% APY)`]}
+                      formatter={(value: number) => [fmtDollar(value), `Yield earned (${activeAPR}% APR)`]}
                       labelFormatter={chartPeriod === '24h' ? (v: number) => `${v}h elapsed` : (name: string) => name}
                     />
                     {chartPeriod === '24h' && (
@@ -780,7 +978,7 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
             <div className="vault-chart-legend">
               <div className="vault-chart-legend-item">
                 <span className="vault-chart-legend-dot" style={{ background: '#a78bfa' }} />
-                Projected yield at {activeAPY}% APY (compound)
+                Projected yield at {activeAPR}% APR
               </div>
             </div>
 

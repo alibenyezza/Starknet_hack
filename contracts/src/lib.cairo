@@ -8,7 +8,6 @@ pub mod strategy;
 pub mod risk;
 pub mod integrations;
 pub mod governance;
-pub mod factory;
 pub mod amm;
 pub mod pool;
 pub mod staker;

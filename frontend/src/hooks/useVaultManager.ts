@@ -69,6 +69,10 @@ const LEVAMM_ABI = [
   { type: 'function', name: 'get_collateral_value', inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
   { type: 'function', name: 'get_debt',          inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
   { type: 'function', name: 'get_current_btc_price', inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
+  { type: 'function', name: 'get_accrued_interest',  inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
+  { type: 'function', name: 'get_accumulated_trading_fees', inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
+  { type: 'function', name: 'get_total_fees_generated', inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
+  { type: 'function', name: 'get_init_block', inputs: [], outputs: [{ type: 'core::integer::u64' }], state_mutability: 'view' },
   {
     type: 'function', name: 'get_price',
     inputs: [{ name: 'btc_amount', type: 'core::integer::u256' }],
@@ -82,6 +86,7 @@ const LEVAMM_ABI = [
     state_mutability: 'external',
   },
   { type: 'function', name: 'accrue_interest', inputs: [], outputs: [], state_mutability: 'external' },
+  { type: 'function', name: 'collect_fees',    inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'external' },
 ] as const;
 
 const STAKER_ABI = [
@@ -111,6 +116,22 @@ const STAKER_ABI = [
     state_mutability: 'external',
   },
   { type: 'function', name: 'claim_rewards', inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'external' },
+  { type: 'function', name: 'get_reward_rate', inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
+] as const;
+
+const LT_TOKEN_ABI = [
+  {
+    type: 'function', name: 'get_claimable_fees',
+    inputs: [{ name: 'user', type: 'core::starknet::contract_address::ContractAddress' }],
+    outputs: [{ type: 'core::integer::u256' }],
+    state_mutability: 'view',
+  },
+  { type: 'function', name: 'claim_fees', inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'external' },
+] as const;
+
+const FEE_DIST_ABI = [
+  { type: 'function', name: 'get_accumulated_holder_fees', inputs: [], outputs: [{ type: 'core::integer::u256' }], state_mutability: 'view' },
+  { type: 'function', name: 'harvest', inputs: [], outputs: [], state_mutability: 'external' },
 ] as const;
 
 // ── helpers ────────────────────────────────────────────────────────────────
@@ -161,7 +182,7 @@ export interface VaultStats {
   vaultBtcPrice: number;
 }
 
-/** YieldBasis LP-based stats (new vault_manager) */
+/** StarkYield LP-based stats (new vault_manager) */
 export interface VaultLpStats {
   totalLpValue: number; // USDC value of the Ekubo LP position
   totalDebt:    number; // USDC CDP debt
@@ -182,6 +203,8 @@ export function useVaultManager() {
   const ekuboContract       = useMemo(() => new Contract(EKUBO_ABI        as any, CONTRACTS.MOCK_EKUBO_ADAPTER, rpc), [rpc]);
   const levammContract      = useMemo(() => new Contract(LEVAMM_ABI       as any, CONTRACTS.LEVAMM,             rpc), [rpc]);
   const stakerContract      = useMemo(() => new Contract(STAKER_ABI       as any, CONTRACTS.STAKER,             rpc), [rpc]);
+  const ltTokenContract     = useMemo(() => new Contract(LT_TOKEN_ABI     as any, CONTRACTS.LT_TOKEN,           rpc), [rpc]);
+  const feeDistContract     = useMemo(() => new Contract(FEE_DIST_ABI     as any, CONTRACTS.FEE_DISTRIBUTOR,    rpc), [rpc]);
 
   // ── state ──────────────────────────────────────────────────────────────
   const [wbtcBalance,    setWbtcBalance]    = useState(0);
@@ -200,7 +223,6 @@ export function useVaultManager() {
   const [isDepositing,  setIsDepositing]  = useState(false);
   const [isWithdrawing,  setIsWithdrawing]  = useState(false);
   const [isFauceting,    setIsFauceting]    = useState(false);
-  const [isRebalancing,  setIsRebalancing]  = useState(false);
 
   // ── LEVAMM / VirtualPool / Staker state ───────────────────────────────
   const [levammStats, setLevammStats] = useState({
@@ -208,6 +230,10 @@ export function useVaultManager() {
     x0: 0,
     collateralValue: 0,
     debt: 0,
+    accruedInterest: 0,
+    accumulatedTradingFees: 0,
+    totalFeesGenerated: 0,
+    initBlock: 0,
     isOverLevered: false,
     isUnderLevered: false,
     isInitialized: false,
@@ -218,15 +244,27 @@ export function useVaultManager() {
     totalStaked: 0,
     userStaked: 0,
     pendingRewards: 0,
+    rewardRate: 0,
   });
   const [isStaking,             setIsStaking]             = useState(false);
   const [isUnstaking,           setIsUnstaking]           = useState(false);
   const [isClaimingRewards,     setIsClaimingRewards]     = useState(false);
+  const [isClaimingFees,        setIsClaimingFees]        = useState(false);
+  const [isCollectingFees,      setIsCollectingFees]      = useState(false);
+  const [claimableFees,         setClaimableFees]         = useState(0);
+  const [accumulatedHolderFees, setAccumulatedHolderFees] = useState(0);
+  const [currentBlock,          setCurrentBlock]          = useState(0);
 
   // ── refresh ────────────────────────────────────────────────────────────
 
   const refresh = useCallback(async () => {
     setIsLoading(true);
+
+    // ── Fetch current block for time-normalized APR (time-normalized) ──
+    try {
+      const block = await rpc.getBlockNumber();
+      setCurrentBlock(block);
+    } catch { /* non-critical */ }
 
     // ── v12: compute LP value from totalShares + price ──────
     try {
@@ -292,11 +330,34 @@ export function useVaultManager() {
           levammContract.get_collateral_value(),
           levammContract.get_debt(),
         ]);
+        // Try reading fee fields (graceful fallback if contract not yet redeployed)
+        let accruedInterest = 0;
+        let accumulatedTradingFees = 0;
+        let totalFeesGenerated = 0;
+        let initBlock = 0;
+        try {
+          const [interest, tradingFees, totalFees, initBlk] = await Promise.all([
+            levammContract.get_accrued_interest(),
+            levammContract.get_accumulated_trading_fees(),
+            levammContract.get_total_fees_generated(),
+            levammContract.get_init_block(),
+          ]);
+          accruedInterest = fromWei(interest);
+          accumulatedTradingFees = fromWei(tradingFees);
+          totalFeesGenerated = fromWei(totalFees);
+          initBlock = Number(toBigInt(initBlk));
+        } catch {
+          // Old contract — fields not available yet
+        }
         setLevammStats({
           dtv:             fromWei(dtv),
           x0:              fromWei(x0),
           collateralValue: fromWei(collateral),
           debt:            fromWei(debt),
+          accruedInterest,
+          accumulatedTradingFees,
+          totalFeesGenerated,
+          initBlock,
           isOverLevered:   Boolean(overLevered),
           isUnderLevered:  Boolean(underLevered),
           isInitialized:   Boolean(active),
@@ -312,16 +373,23 @@ export function useVaultManager() {
     if (isDeployed(CONTRACTS.STAKER)) {
       try {
         const total = await stakerContract.get_total_staked();
-        setStakerStats(prev => ({ ...prev, totalStaked: fromWei(total) }));
+        // Try fetching reward_rate (graceful fallback if contract not yet redeployed)
+        let rewardRate = 0;
+        try {
+          const rateRaw = await stakerContract.get_reward_rate();
+          rewardRate = fromWei(rateRaw);
+        } catch { /* contract doesn't have get_reward_rate yet */ }
+        setStakerStats(prev => ({ ...prev, totalStaked: fromWei(total, DECIMALS.SHARES), rewardRate }));
         if (address) {
           const [userStaked, pending] = await Promise.all([
             stakerContract.get_staked_balance(address),
             stakerContract.pending_rewards(address),
           ]);
           setStakerStats({
-            totalStaked:    fromWei(total),
-            userStaked:     fromWei(userStaked),
+            totalStaked:    fromWei(total, DECIMALS.SHARES),
+            userStaked:     fromWei(userStaked, DECIMALS.SHARES),
             pendingRewards: fromWei(pending),
+            rewardRate,
           });
         }
       } catch (err) {
@@ -329,8 +397,28 @@ export function useVaultManager() {
       }
     }
 
+    // ── LT Token claimable fees — only if deployed + user connected ──
+    if (isDeployed(CONTRACTS.LT_TOKEN) && address) {
+      try {
+        const claimable = await ltTokenContract.get_claimable_fees(address);
+        setClaimableFees(fromWei(claimable, DECIMALS.USDC));
+      } catch (err) {
+        console.error('[useVaultManager] lt claimable fees error:', err);
+      }
+    }
+
+    // ── FeeDistributor accumulated holder fees ──
+    if (isDeployed(CONTRACTS.FEE_DISTRIBUTOR)) {
+      try {
+        const accHolderFees = await feeDistContract.get_accumulated_holder_fees();
+        setAccumulatedHolderFees(fromWei(accHolderFees, DECIMALS.USDC));
+      } catch (err) {
+        console.error('[useVaultManager] fee dist error:', err);
+      }
+    }
+
     setIsLoading(false);
-  }, [address, btcContract, vaultContract, ekuboContract, levammContract, stakerContract]);
+  }, [address, btcContract, vaultContract, ekuboContract, levammContract, stakerContract, ltTokenContract, feeDistContract]);
 
   useEffect(() => {
     refresh();
@@ -468,26 +556,6 @@ export function useVaultManager() {
     }
   }, [account, userShares, refresh, rpc]);
 
-  const rebalance = useCallback(async (): Promise<{ success: boolean; txHash?: string; error?: string }> => {
-    if (!account) return { success: false, error: 'Wallet not connected' };
-    setIsRebalancing(true);
-    try {
-      const tx = await account.execute([{
-        contractAddress: CONTRACTS.VAULT_MANAGER,
-        entrypoint: 'rebalance',
-        calldata: [],
-      }]);
-      setTimeout(refresh, 4000);
-      return { success: true, txHash: tx.transaction_hash };
-    } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
-      console.error('[useVaultManager] rebalance error:', msg);
-      return { success: false, error: msg };
-    } finally {
-      setIsRebalancing(false);
-    }
-  }, [account, refresh]);
-
   // ── Staker actions ─────────────────────────────────────────────────────
   const stakeShares = useCallback(async (
     amount: number,
@@ -495,10 +563,10 @@ export function useVaultManager() {
     if (!account) return { success: false, error: 'Wallet not connected' };
     setIsStaking(true);
     try {
-      const [low, high] = u256Calldata(toWei(amount));
+      const [low, high] = u256Calldata(toWei(amount, DECIMALS.BTC));
       const tx = await account.execute([
-        // Approve Staker to pull syBTC
-        { contractAddress: CONTRACTS.SY_BTC_TOKEN, entrypoint: 'approve', calldata: [CONTRACTS.STAKER, low, high] },
+        // Approve Staker to pull LT tokens
+        { contractAddress: CONTRACTS.LT_TOKEN, entrypoint: 'approve', calldata: [CONTRACTS.STAKER, low, high] },
         { contractAddress: CONTRACTS.STAKER,       entrypoint: 'stake',   calldata: [low, high] },
       ]);
       setTimeout(refresh, 4000);
@@ -518,7 +586,7 @@ export function useVaultManager() {
     if (!account) return { success: false, error: 'Wallet not connected' };
     setIsUnstaking(true);
     try {
-      const [low, high] = u256Calldata(toWei(amount));
+      const [low, high] = u256Calldata(toWei(amount, DECIMALS.BTC));
       const tx = await account.execute([{
         contractAddress: CONTRACTS.STAKER,
         entrypoint: 'unstake',
@@ -534,6 +602,66 @@ export function useVaultManager() {
       setIsUnstaking(false);
     }
   }, [account, refresh]);
+
+  // ── Deposit wBTC + stake in one multicall (time-normalized) ────────────
+  const depositAndStake = useCallback(async (
+    btcAmount: number,
+  ): Promise<{ success: boolean; txHash?: string; error?: string }> => {
+    if (!account)       return { success: false, error: 'Wallet not connected' };
+    if (btcAmount <= 0) return { success: false, error: 'Amount must be > 0' };
+    setIsStaking(true);
+    try {
+      const [low, high] = u256Calldata(toWei(btcAmount, DECIMALS.BTC));
+      const tx = await account.execute([
+        // 1. Approve BTC → VaultManager
+        { contractAddress: CONTRACTS.BTC_TOKEN, entrypoint: 'approve', calldata: [CONTRACTS.VAULT_MANAGER, low, high] },
+        // 2. VaultManager.deposit(amount) → mint LT to user (1:1 raw)
+        { contractAddress: CONTRACTS.VAULT_MANAGER, entrypoint: 'deposit', calldata: [low, high] },
+        // 3. Approve LT → Staker
+        { contractAddress: CONTRACTS.LT_TOKEN, entrypoint: 'approve', calldata: [CONTRACTS.STAKER, low, high] },
+        // 4. Staker.stake(amount)
+        { contractAddress: CONTRACTS.STAKER, entrypoint: 'stake', calldata: [low, high] },
+      ]);
+      rpc.waitForTransaction(tx.transaction_hash).then(() => refresh()).catch(() => {
+        setTimeout(refresh, 15000);
+      });
+      return { success: true, txHash: tx.transaction_hash };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[useVaultManager] depositAndStake error:', msg);
+      return { success: false, error: msg };
+    } finally {
+      setIsStaking(false);
+    }
+  }, [account, refresh, rpc]);
+
+  // ── Unstake LT + withdraw wBTC in one multicall ───────────────────────
+  const unstakeAndWithdraw = useCallback(async (
+    btcAmount: number,
+  ): Promise<{ success: boolean; txHash?: string; error?: string }> => {
+    if (!account)       return { success: false, error: 'Wallet not connected' };
+    if (btcAmount <= 0) return { success: false, error: 'Amount must be > 0' };
+    setIsUnstaking(true);
+    try {
+      const [low, high] = u256Calldata(toWei(btcAmount, DECIMALS.BTC));
+      const tx = await account.execute([
+        // 1. Staker.unstake(amount) → LT returns to user
+        { contractAddress: CONTRACTS.STAKER, entrypoint: 'unstake', calldata: [low, high] },
+        // 2. VaultManager.withdraw(amount) → burn LT, return wBTC
+        { contractAddress: CONTRACTS.VAULT_MANAGER, entrypoint: 'withdraw', calldata: [low, high] },
+      ]);
+      rpc.waitForTransaction(tx.transaction_hash).then(() => refresh()).catch(() => {
+        setTimeout(refresh, 15000);
+      });
+      return { success: true, txHash: tx.transaction_hash };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[useVaultManager] unstakeAndWithdraw error:', msg);
+      return { success: false, error: msg };
+    } finally {
+      setIsUnstaking(false);
+    }
+  }, [account, refresh, rpc]);
 
   const claimRewards = useCallback(async (): Promise<{ success: boolean; txHash?: string; error?: string }> => {
     if (!account) return { success: false, error: 'Wallet not connected' };
@@ -555,6 +683,66 @@ export function useVaultManager() {
     }
   }, [account, refresh]);
 
+  // ── Claim LT holder fees (USDC) ────────────────────────────────────────
+  const claimFees = useCallback(async (): Promise<{ success: boolean; txHash?: string; error?: string }> => {
+    if (!account) return { success: false, error: 'Wallet not connected' };
+    setIsClaimingFees(true);
+    try {
+      const tx = await account.execute([{
+        contractAddress: CONTRACTS.LT_TOKEN,
+        entrypoint: 'claim_fees',
+        calldata: [],
+      }]);
+      setTimeout(refresh, 4000);
+      return { success: true, txHash: tx.transaction_hash };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[useVaultManager] claimFees error:', msg);
+      return { success: false, error: msg };
+    } finally {
+      setIsClaimingFees(false);
+    }
+  }, [account, refresh]);
+
+  // ── Collect fees from LEVAMM (permissionless) ─────────────────────────
+  const collectFees = useCallback(async (): Promise<{ success: boolean; txHash?: string; error?: string }> => {
+    if (!account) return { success: false, error: 'Wallet not connected' };
+    setIsCollectingFees(true);
+    try {
+      const tx = await account.execute([{
+        contractAddress: CONTRACTS.LEVAMM,
+        entrypoint: 'collect_fees',
+        calldata: [],
+      }]);
+      setTimeout(refresh, 4000);
+      return { success: true, txHash: tx.transaction_hash };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[useVaultManager] collectFees error:', msg);
+      return { success: false, error: msg };
+    } finally {
+      setIsCollectingFees(false);
+    }
+  }, [account, refresh]);
+
+  // ── Harvest: flush accumulated holder fees to LtToken (permissionless) ─
+  const harvestFees = useCallback(async (): Promise<{ success: boolean; txHash?: string; error?: string }> => {
+    if (!account) return { success: false, error: 'Wallet not connected' };
+    try {
+      const tx = await account.execute([{
+        contractAddress: CONTRACTS.FEE_DISTRIBUTOR,
+        entrypoint: 'harvest',
+        calldata: [],
+      }]);
+      setTimeout(refresh, 4000);
+      return { success: true, txHash: tx.transaction_hash };
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error('[useVaultManager] harvestFees error:', msg);
+      return { success: false, error: msg };
+    }
+  }, [account, refresh]);
+
   return {
     // ── existing ──────────────────────────────────────────────────────────
     wbtcBalance,
@@ -566,12 +754,10 @@ export function useVaultManager() {
     isDepositing,
     isWithdrawing,
     isFauceting,
-    isRebalancing,
     deposit,
     withdraw,
     faucet,
     burnWbtc,
-    rebalance,
     refresh,
     // ── new: LEVAMM / VirtualPool / Staker ──────────────────────────────
     levammStats,
@@ -581,6 +767,17 @@ export function useVaultManager() {
     isClaimingRewards,
     stakeShares,
     unstakeShares,
+    depositAndStake,
+    unstakeAndWithdraw,
     claimRewards,
+    // ── new: block + fees ──────────────────────────────────────────────
+    currentBlock,
+    claimableFees,
+    accumulatedHolderFees,
+    isClaimingFees,
+    isCollectingFees,
+    claimFees,
+    collectFees,
+    harvestFees,
   };
 }

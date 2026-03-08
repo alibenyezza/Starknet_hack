@@ -1,4 +1,4 @@
-//! VirtualPool — Fee-less flash loan provider for YieldBasis vault
+//! VirtualPool — Fee-less flash loan provider for StarkYield vault
 //!
 //! On deposit:  vault calls flash_loan(usdc_needed)  → USDC transferred from reserves
 //! On withdraw: vault calls flash_loan(debt_share)   → USDC transferred from reserves

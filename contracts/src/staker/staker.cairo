@@ -1,20 +1,23 @@
-//! Staker — Stake syBTC to earn syYB emissions (MasterChef pattern)
+//! Staker — Stake LT tokens to earn sy-WBTC emissions (MasterChef pattern)
 //!
-//! Users stake syBTC here instead of earning trading fees directly.
-//! In return they receive syYB governance tokens at a configurable rate.
+//! Users stake LT (vault share) tokens here instead of earning trading fees directly.
+//! In return they receive sy-WBTC governance tokens at a configurable rate.
 //! The Staker contract must own the SyYbToken to be able to mint rewards.
+//!
+//! Staking LT shares to earn sy-WBTC emissions.
 
 use starknet::ContractAddress;
 
 #[starknet::interface]
 pub trait IStaker<TContractState> {
-    fn stake(ref self: TContractState, sy_btc_amount: u256);
-    fn unstake(ref self: TContractState, sy_btc_amount: u256);
+    fn stake(ref self: TContractState, amount: u256);
+    fn unstake(ref self: TContractState, amount: u256);
     fn claim_rewards(ref self: TContractState) -> u256;
     fn pending_rewards(self: @TContractState, user: ContractAddress) -> u256;
     fn get_total_staked(self: @TContractState) -> u256;
     fn get_staked_balance(self: @TContractState, user: ContractAddress) -> u256;
     fn get_acc_reward_per_share(self: @TContractState) -> u256;
+    fn get_reward_rate(self: @TContractState) -> u256;
     fn set_reward_rate(ref self: TContractState, rate: u256);
     fn set_sy_yb_token(ref self: TContractState, sy_yb: ContractAddress);
     fn get_owner(self: @TContractState) -> ContractAddress;
@@ -37,12 +40,12 @@ pub mod Staker {
     #[storage]
     struct Storage {
         owner: ContractAddress,
-        sy_btc_token: ContractAddress,
+        stake_token: ContractAddress,
         sy_yb_token: ContractAddress,
         total_staked: u256,
-        reward_rate: u256,            // syYB minted per block per SCALE unit of staked syBTC
+        reward_rate: u256,            // sy-WBTC minted per block per SCALE unit of staked syBTC
         last_reward_block: u64,
-        acc_reward_per_share: u256,   // accumulated syYB per share (1e18-scaled)
+        acc_reward_per_share: u256,   // accumulated sy-WBTC per share (1e18-scaled)
         staked_balances: Map<ContractAddress, u256>,
         reward_debt: Map<ContractAddress, u256>,
     }
@@ -72,12 +75,12 @@ pub mod Staker {
     fn constructor(
         ref self: ContractState,
         owner: ContractAddress,
-        sy_btc_token: ContractAddress,
+        stake_token: ContractAddress,
         sy_yb_token: ContractAddress,
         initial_reward_rate: u256,
     ) {
         self.owner.write(owner);
-        self.sy_btc_token.write(sy_btc_token);
+        self.stake_token.write(sy_btc_token);
         self.sy_yb_token.write(sy_yb_token);
         self.reward_rate.write(initial_reward_rate);
         self.last_reward_block.write(get_block_number());
@@ -87,15 +90,15 @@ pub mod Staker {
 
     #[abi(embed_v0)]
     impl StakerImpl of IStaker<ContractState> {
-        fn stake(ref self: ContractState, sy_btc_amount: u256) {
-            assert(sy_btc_amount > 0, 'Amount must be > 0');
+        fn stake(ref self: ContractState, amount: u256) {
+            assert(amount > 0, 'Amount must be > 0');
             self._update_rewards();
 
             let caller = get_caller_address();
 
-            // Transfer syBTC from user to this contract
-            IERC20Dispatcher { contract_address: self.sy_btc_token.read() }
-                .transfer_from(caller, get_contract_address(), sy_btc_amount);
+            // Transfer stake token (LT) from user to this contract
+            IERC20Dispatcher { contract_address: self.stake_token.read() }
+                .transfer_from(caller, get_contract_address(), amount);
 
             // Settle pending rewards before changing balance
             let staked = self.staked_balances.read(caller);
@@ -105,21 +108,21 @@ pub mod Staker {
             }
 
             // Update balances
-            let new_staked = staked + sy_btc_amount;
+            let new_staked = staked + amount;
             self.staked_balances.write(caller, new_staked);
-            self.total_staked.write(self.total_staked.read() + sy_btc_amount);
+            self.total_staked.write(self.total_staked.read() + amount);
 
             // Reset reward debt to current accumulated level
             let acc = self.acc_reward_per_share.read();
             self.reward_debt.write(caller, Math::mul_fixed(new_staked, acc));
 
-            self.emit(Staked { user: caller, amount: sy_btc_amount });
+            self.emit(Staked { user: caller, amount });
         }
 
-        fn unstake(ref self: ContractState, sy_btc_amount: u256) {
+        fn unstake(ref self: ContractState, amount: u256) {
             let caller = get_caller_address();
             let staked = self.staked_balances.read(caller);
-            assert(staked >= sy_btc_amount, 'Insufficient staked balance');
+            assert(staked >= amount, 'Insufficient staked balance');
 
             self._update_rewards();
 
@@ -128,19 +131,19 @@ pub mod Staker {
             if pending > 0 { self._mint_reward(caller, pending); }
 
             // Update balances
-            let new_staked = staked - sy_btc_amount;
+            let new_staked = staked - amount;
             self.staked_balances.write(caller, new_staked);
-            self.total_staked.write(self.total_staked.read() - sy_btc_amount);
+            self.total_staked.write(self.total_staked.read() - amount);
 
             // Reset reward debt
             let acc = self.acc_reward_per_share.read();
             self.reward_debt.write(caller, Math::mul_fixed(new_staked, acc));
 
-            // Return syBTC
-            IERC20Dispatcher { contract_address: self.sy_btc_token.read() }
-                .transfer(caller, sy_btc_amount);
+            // Return stake token (LT)
+            IERC20Dispatcher { contract_address: self.stake_token.read() }
+                .transfer(caller, amount);
 
-            self.emit(Unstaked { user: caller, amount: sy_btc_amount });
+            self.emit(Unstaked { user: caller, amount });
         }
 
         fn claim_rewards(ref self: ContractState) -> u256 {
@@ -184,6 +187,10 @@ pub mod Staker {
 
         fn get_acc_reward_per_share(self: @ContractState) -> u256 {
             self.acc_reward_per_share.read()
+        }
+
+        fn get_reward_rate(self: @ContractState) -> u256 {
+            self.reward_rate.read()
         }
 
         fn set_reward_rate(ref self: ContractState, rate: u256) {
@@ -233,12 +240,12 @@ pub mod Staker {
             if gross > debt { gross - debt } else { 0 }
         }
 
-        /// Mint syYB to a user (requires Staker to own SyYbToken)
+        /// Mint sy-WBTC to a user (requires Staker to own SyYbToken)
         fn _mint_reward(ref self: ContractState, to: ContractAddress, amount: u256) {
             if amount == 0 { return; }
             let sy_yb = self.sy_yb_token.read();
             let zero: ContractAddress = 0_felt252.try_into().unwrap();
-            if sy_yb == zero { return; }
+            assert(sy_yb != zero, 'SY token not set');
             ISyYbTokenDispatcher { contract_address: sy_yb }.mint(to, amount);
         }
     }

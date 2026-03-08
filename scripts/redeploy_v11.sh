@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================
-# YieldBasis v11 — Full redeploy (clear MockEkubo old state)
+# StarkYield v11 — Full redeploy (clear MockEkubo old state)
 #
 # WHY: MockEkuboAdapter had residual LP state from v9 tests.
 #      VaultManager withdraw now re-adds remaining LP on
@@ -35,7 +35,7 @@ VIRTUAL_POOL="0x0460d5b3cf27cbf296495c22301badd05a68c50c416036c7ed33c5454eed5f55
 WAIT_TIME=45
 
 echo -e "${BLUE}============================================================${NC}"
-echo -e "${BLUE}      YieldBasis v11 — Full Redeploy (clean LP state)${NC}"
+echo -e "${BLUE}      StarkYield v11 — Full Redeploy (clean LP state)${NC}"
 echo -e "${BLUE}============================================================${NC}"
 echo -e "${CYAN}Fix: withdraw re-adds remaining LP on partial withdrawals${NC}"
 echo -e "${CYAN}Fix: fresh MockEkuboAdapter clears old v9 LP residue${NC}"
@@ -113,7 +113,7 @@ sleep $WAIT_TIME
 LT_DEPLOY=$(sncast --account "$SNCAST_ACCOUNT" \
     deploy --network sepolia \
     --class-hash "$LT_CLASS" \
-    --arguments '"YieldBasis LT", "LT", '"$OWNER_ADDRESS" \
+    --arguments '"StarkYield LT", "LT", '"$OWNER_ADDRESS" \
     2>&1) || true
 echo "$LT_DEPLOY"
 NEW_LT=$(echo "$LT_DEPLOY" | grep -oP 'contract_address:\s+\K0x[0-9a-fA-F]+' \
