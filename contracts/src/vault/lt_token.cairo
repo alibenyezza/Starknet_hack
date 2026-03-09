@@ -31,6 +31,8 @@ pub trait ILtToken<TContractState> {
     fn get_claimable_fees(self: @TContractState, user: ContractAddress) -> u256;
     /// Set USDC token address (admin).
     fn set_usdc_token(ref self: TContractState, usdc_token: ContractAddress);
+    /// Set vault address — the vault is authorized to mint/burn.
+    fn set_vault(ref self: TContractState, vault: ContractAddress);
 }
 
 #[starknet::contract]
@@ -64,6 +66,7 @@ pub mod LtToken {
         erc20: ERC20Component::Storage,
         #[substorage(v0)]
         ownable: OwnableComponent::Storage,
+        vault: ContractAddress,
         usdc_token: ContractAddress,
         // Accumulated USDC fees per LT share (1e18-scaled)
         acc_fees_per_share: u256,
@@ -101,9 +104,16 @@ pub mod LtToken {
 
     #[abi(embed_v0)]
     impl LtTokenImpl of ILtToken<ContractState> {
-        /// Mint LT shares to a depositor (only vault/owner).
+        /// Mint LT shares to a depositor (only vault).
         fn mint(ref self: ContractState, to: ContractAddress, amount: u256) {
-            self.ownable.assert_only_owner();
+            let caller = get_caller_address();
+            let vault_addr = self.vault.read();
+            let zero: ContractAddress = 0.try_into().unwrap();
+            // Allow vault OR owner (fallback for admin ops)
+            assert(
+                caller == vault_addr || (vault_addr == zero && caller == self.ownable.owner()),
+                'Only vault can mint',
+            );
             assert(amount > 0, 'Amount must be > 0');
             // Settle pending fees before changing balance
             let bal = self.erc20.balance_of(to);
@@ -118,9 +128,15 @@ pub mod LtToken {
             self.fee_debt.write(to, new_bal * acc / SCALE);
         }
 
-        /// Burn LT shares from a withdrawer (only vault/owner).
+        /// Burn LT shares from a withdrawer (only vault).
         fn burn(ref self: ContractState, from: ContractAddress, amount: u256) {
-            self.ownable.assert_only_owner();
+            let caller = get_caller_address();
+            let vault_addr = self.vault.read();
+            let zero: ContractAddress = 0.try_into().unwrap();
+            assert(
+                caller == vault_addr || (vault_addr == zero && caller == self.ownable.owner()),
+                'Only vault can burn',
+            );
             assert(amount > 0, 'Amount must be > 0');
             self.erc20.burn(from, amount);
             // Update fee debt for new balance
@@ -130,14 +146,10 @@ pub mod LtToken {
         }
 
         /// Distribute USDC fee revenue to LT holders.
-        /// USDC must already be in this contract. Increases acc_fees_per_share.
-        /// Permissionless — safe because USDC must be transferred before calling,
-        /// and the function only increases the per-share accumulator.
         fn distribute_fees(ref self: ContractState, amount: u256) {
             if amount == 0 { return; }
             let total_supply = self.erc20.total_supply();
             if total_supply == 0 { return; }
-            // Increase accumulated fees per share
             let addition = amount * SCALE / total_supply;
             let new_acc = self.acc_fees_per_share.read() + addition;
             self.acc_fees_per_share.write(new_acc);
@@ -156,9 +168,7 @@ pub mod LtToken {
             let pending = if gross > debt { gross - debt } else { 0 };
 
             if pending > 0 {
-                // Update debt
                 self.fee_debt.write(user, gross);
-                // Transfer USDC to user
                 let usdc_addr = self.usdc_token.read();
                 let zero: ContractAddress = 0.try_into().unwrap();
                 if usdc_addr != zero {
@@ -182,6 +192,12 @@ pub mod LtToken {
         fn set_usdc_token(ref self: ContractState, usdc_token: ContractAddress) {
             self.ownable.assert_only_owner();
             self.usdc_token.write(usdc_token);
+        }
+
+        /// Set the vault address (only owner). The vault can mint/burn.
+        fn set_vault(ref self: ContractState, vault: ContractAddress) {
+            self.ownable.assert_only_owner();
+            self.vault.write(vault);
         }
     }
 }

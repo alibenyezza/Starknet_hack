@@ -1,33 +1,36 @@
 // Contract Addresses (Testnet Sepolia)
-// v12: decimal fix (BTC=8, USDC=6), EkuboLPWrapper, GaugeController security
+// Full redeploy with fees, LEVAMM APR, rebalancing
 export const CONTRACTS = {
-  // ── v12 (decimal fix + new contracts) ─────────────────────────────────────
-  VAULT_MANAGER:        '0x07af1ee2343f2710ac9b7544f0714adf1df292e7e98fece42b3a3e64fe27a3e9',
-  LT_TOKEN:             '0x018a65f5987d06a1e6d537a50ed7c8e4ea5869722f0f3772551e25f81efd4406',
-  VIRTUAL_POOL:         '0x034bbd3d99c00f36773e712bbb8cba7022ee97746326cffda0af1c2efcb1a3c3',
-  MOCK_EKUBO_ADAPTER:   '0x06c9c6ce0219d849675c1399a996908ced01aa8ec6660b09ab10bb2276908c48',
-  MOCK_LENDING_ADAPTER: '0x0014c719633c27561470a0b507c4b1458766c6fa4d2b70f979679339e9edb3c7',
+  // ── Core vault contracts ─────────────────────────────────────
+  VAULT_MANAGER:        '0x07eb052e36139c284835da8ac0591d7fb873a5e6779929575e373eb375ac38b8',
+  LT_TOKEN:             '0x07bb2c643b849c46b845dec6488d9b3e0cffd3afe309b7e6f5c7ea45c6385a8f',
+  VIRTUAL_POOL:         '0x0190f9b1eeef43f98b96bc0d4c8dc0b9b2c008013975b1b1061d8564a1cc4753',
+  MOCK_EKUBO_ADAPTER:   '0x013a15529211d5a2775bd698609b379ca1ff70ffa65b8d5f81485b9837c0ee12',
+  MOCK_LENDING_ADAPTER: '0x001b376346f9b24aca87c85c3a2780bea4941727fbc2a9e821b423d38cc4eb79',
 
-  // ── Tokens (v12 — new decimals: BTC=8, USDC=6) ──────────────────────────
+  // ── Tokens (BTC=8 dec, USDC=6 dec) ──────────────────────────
   BTC_TOKEN:     '0x01299997532891f6cb0088b5c779138f98f29d5a03e23e9611fad7071dffd89b',
   USDC_TOKEN:    '0x02ada118d8ec35abdf936f2d2f93cbe0d4fc66bd16bb51ef3b4f2baf20d32306',
 
-  // ── New v12 contracts ─────────────────────────────────────────────────────
-  EKUBO_LP_WRAPPER:  '0x00d65a42e2aae825d3065a1693c5ede2e7ee31a1a7dfe8f44e9e1fb73e6f34bb',
-  GAUGE_CONTROLLER:  '0x06a2b1f4a3e58cb0ad7a71f94e7fbfabd975f94863f68401c97019a4c0d567d2',
-  FEE_DISTRIBUTOR:   '0x0' + '0'.repeat(62), // TODO: update after deploy_all.sh
+  // ── Fee & governance contracts ──────────────────────────────
+  FEE_DISTRIBUTOR:   '0x0360f009cf2e29fb8a30e133cc7c32783409d341286560114ccff9e3c7fc7362',
+  RISK_MANAGER:      '0x0481a49142bec3d6c68c77ec5ab1002c5f438aa55766c3efebbd741d35f25a25',
+  EKUBO_LP_WRAPPER:  '0x07574ae39df29c66e2fc640966070630eaf16281c32aaa8dce4687fdf4400034',
+  GAUGE_CONTROLLER:  '0x05d3800e8b1ee257b5f72ce0f4c373c5d8e5b9d84f1bff1917b073ce2fbe46e7',
+  VOTING_ESCROW:     '0x0008617d29fed039d3448bdd002912183c45b6d4c268dbd33cf02055368eef3c',
+  LIQUIDITY_GAUGE:   '0x0571bfcd77fee368783ff746f6ec0bf56706fc1989caa9c521295dfd97f72b13',
 
-  // ── v6 (kept for reference / Staker / LevAMM UI) ─────────────────────────
-  LEVAMM:        '0x0623647a3e0f7f7a7aa0061a692c4e64e916dd853e0d71624da95f4076fff4af',
-  STAKER:        '0x04620f57ef40e7e2293ca6d06153930697bcb88d173f1634ba5cff768acec273',
-  SY_TOKEN:      '0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e', // sy-WBTC token
+  // ── LEVAMM + Staker ─────────────────────────────────────────
+  LEVAMM:        '0x007b1a0774303f1a9f5ead5ced7d67bf2ced3ecab52b9095501349b753b67a88',
+  STAKER:        '0x01b92e5719bcf3c419113bbccb0e8ead3a93a8b5d38804edbcf26fcb7e06d719',
+  SY_TOKEN:      '0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e',
   SY_BTC_TOKEN:  '0x076cb4dadb2db9a95072ecffbb67a61076e642eced3d7f37361ff6f202018be3',
 } as const;
 
 // Network Configuration
 export const NETWORK = {
   CHAIN_ID: '0x534e5f5345504f4c4941', // SN_SEPOLIA
-  RPC_URL: 'https://api.cartridge.gg/x/starknet/sepolia', // proxied via /rpc in dev
+  RPC_URL: 'https://api.cartridge.gg/x/starknet/sepolia',
   EXPLORER_URL: 'https://sepolia.voyager.online',
 } as const;
 
@@ -48,7 +51,7 @@ export const HEALTH_FACTOR = {
   DANGER: 1.0,
 } as const;
 
-// Token Decimals — v12: MockWBTC uses 8 decimals, MockUSDC uses 6
+// Token Decimals — MockWBTC uses 8 decimals, MockUSDC uses 6
 export const DECIMALS = {
   BTC: 8,
   USDC: 6,

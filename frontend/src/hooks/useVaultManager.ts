@@ -379,16 +379,16 @@ export function useVaultManager() {
           const rateRaw = await stakerContract.get_reward_rate();
           rewardRate = fromWei(rateRaw);
         } catch { /* contract doesn't have get_reward_rate yet */ }
-        setStakerStats(prev => ({ ...prev, totalStaked: fromWei(total, DECIMALS.SHARES), rewardRate }));
+        setStakerStats(prev => ({ ...prev, totalStaked: fromWei(total, DECIMALS.BTC), rewardRate }));
         if (address) {
           const [userStaked, pending] = await Promise.all([
             stakerContract.get_staked_balance(address),
             stakerContract.pending_rewards(address),
           ]);
           setStakerStats({
-            totalStaked:    fromWei(total, DECIMALS.SHARES),
-            userStaked:     fromWei(userStaked, DECIMALS.SHARES),
-            pendingRewards: fromWei(pending),
+            totalStaked:    fromWei(total, DECIMALS.BTC),
+            userStaked:     fromWei(userStaked, DECIMALS.BTC),
+            pendingRewards: fromWei(pending, DECIMALS.BTC),
             rewardRate,
           });
         }

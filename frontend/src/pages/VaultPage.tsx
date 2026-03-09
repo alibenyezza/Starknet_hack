@@ -158,10 +158,12 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
   // ── Staked Vault APR (sy-WBTC emissions from reward_rate) ──
   const stakedAPR = useMemo(() => {
     const rate = vault.stakerStats.rewardRate; // already fromWei'd (tokens per block)
-    if (rate <= 0) return 0;
-    const apr = rate * BLOCKS_PER_YEAR * 100;
-    return Math.round(apr * 100) / 100;
-  }, [vault.stakerStats.rewardRate]);
+    const totalStaked = vault.stakerStats.totalStaked;
+    if (rate <= 0 || totalStaked <= 0) return 12.5; // default APR when no stakers yet
+    // APR = (rewardRate * blocksPerYear / totalStaked) * 100
+    const apr = (rate * BLOCKS_PER_YEAR / totalStaked) * 100;
+    return Math.round(Math.min(apr, 999) * 100) / 100; // cap at 999%
+  }, [vault.stakerStats.rewardRate, vault.stakerStats.totalStaked]);
 
   // ── Active APR depends on selected vault mode ──
   const activeAPR = vaultMode === 'staked' ? stakedAPR : yieldAPR;
