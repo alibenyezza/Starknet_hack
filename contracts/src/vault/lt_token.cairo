@@ -10,7 +10,7 @@
 
 use starknet::ContractAddress;
 use core::byte_array::ByteArray;
-use openzeppelin::token::erc20::{ERC20HooksEmptyImpl, DefaultConfig};
+use openzeppelin::token::erc20::ERC20HooksEmptyImpl;
 
 /// Minimal ERC-20 facade for USDC transfers
 #[starknet::interface]
@@ -33,20 +33,24 @@ pub trait ILtToken<TContractState> {
     fn set_usdc_token(ref self: TContractState, usdc_token: ContractAddress);
     /// Set vault address — the vault is authorized to mint/burn.
     fn set_vault(ref self: TContractState, vault: ContractAddress);
+    /// Set staker address — excluded from fee distribution.
+    fn set_staker(ref self: TContractState, staker: ContractAddress);
 }
 
 #[starknet::contract]
 pub mod LtToken {
     use super::{ILtToken, ContractAddress, ByteArray, IERC20FacadeDispatcher, IERC20FacadeDispatcherTrait};
-    use openzeppelin::token::erc20::{ERC20Component, ERC20HooksEmptyImpl, DefaultConfig};
+    use openzeppelin::token::erc20::{ERC20Component, ERC20HooksEmptyImpl};
     use openzeppelin::access::ownable::OwnableComponent;
-    use starknet::{get_caller_address, get_contract_address};
+    use starknet::get_caller_address;
     use starknet::storage::{Map, StorageMapReadAccess, StorageMapWriteAccess, StoragePointerReadAccess, StoragePointerWriteAccess};
 
     component!(path: ERC20Component, storage: erc20, event: ERC20Event);
     component!(path: OwnableComponent, storage: ownable, event: OwnableEvent);
 
-    impl Config = DefaultConfig;
+    pub impl Config of ERC20Component::ImmutableConfig {
+        const DECIMALS: u8 = 8;
+    }
     impl ERC20HooksImpl = ERC20HooksEmptyImpl<ContractState>;
 
     #[abi(embed_v0)]
@@ -72,6 +76,8 @@ pub mod LtToken {
         acc_fees_per_share: u256,
         // Per-user fee debt (snapshot of acc_fees_per_share * balance at last claim)
         fee_debt: Map<ContractAddress, u256>,
+        // Staker contract address — excluded from fee distribution
+        staker_address: ContractAddress,
     }
 
     #[event]
@@ -115,14 +121,22 @@ pub mod LtToken {
                 'Only vault can mint',
             );
             assert(amount > 0, 'Amount must be > 0');
-            // Settle pending fees before changing balance
+            // Settle pending fees BEFORE changing balance
             let bal = self.erc20.balance_of(to);
             if bal > 0 {
                 let acc = self.acc_fees_per_share.read();
-                self.fee_debt.write(to, bal * acc / SCALE);
+                let gross = bal * acc / SCALE;
+                let debt = self.fee_debt.read(to);
+                let pending = if gross > debt { gross - debt } else { 0 };
+                if pending > 0 {
+                    let usdc_addr = self.usdc_token.read();
+                    if usdc_addr != zero {
+                        IERC20FacadeDispatcher { contract_address: usdc_addr }
+                            .transfer(to, pending);
+                    }
+                }
             }
             self.erc20.mint(to, amount);
-            // Update fee debt for new balance
             let new_bal = self.erc20.balance_of(to);
             let acc = self.acc_fees_per_share.read();
             self.fee_debt.write(to, new_bal * acc / SCALE);
@@ -138,8 +152,22 @@ pub mod LtToken {
                 'Only vault can burn',
             );
             assert(amount > 0, 'Amount must be > 0');
+            // Settle pending fees BEFORE changing balance
+            let bal = self.erc20.balance_of(from);
+            if bal > 0 {
+                let acc = self.acc_fees_per_share.read();
+                let gross = bal * acc / SCALE;
+                let debt = self.fee_debt.read(from);
+                let pending = if gross > debt { gross - debt } else { 0 };
+                if pending > 0 {
+                    let usdc_addr = self.usdc_token.read();
+                    if usdc_addr != zero {
+                        IERC20FacadeDispatcher { contract_address: usdc_addr }
+                            .transfer(from, pending);
+                    }
+                }
+            }
             self.erc20.burn(from, amount);
-            // Update fee debt for new balance
             let new_bal = self.erc20.balance_of(from);
             let acc = self.acc_fees_per_share.read();
             self.fee_debt.write(from, new_bal * acc / SCALE);
@@ -150,7 +178,17 @@ pub mod LtToken {
             if amount == 0 { return; }
             let total_supply = self.erc20.total_supply();
             if total_supply == 0 { return; }
-            let addition = amount * SCALE / total_supply;
+            // Exclude LT held by Staker (they earn emissions, not trading fees)
+            let staker_addr = self.staker_address.read();
+            let zero: ContractAddress = 0.try_into().unwrap();
+            let staker_bal = if staker_addr != zero {
+                self.erc20.balance_of(staker_addr)
+            } else {
+                0
+            };
+            let effective_supply = total_supply - staker_bal;
+            if effective_supply == 0 { return; }
+            let addition = amount * SCALE / effective_supply;
             let new_acc = self.acc_fees_per_share.read() + addition;
             self.acc_fees_per_share.write(new_acc);
             self.emit(FeesDistributed { amount, new_acc_per_share: new_acc });
@@ -198,6 +236,12 @@ pub mod LtToken {
         fn set_vault(ref self: ContractState, vault: ContractAddress) {
             self.ownable.assert_only_owner();
             self.vault.write(vault);
+        }
+
+        /// Set the staker address (only owner). Excluded from fee distribution.
+        fn set_staker(ref self: ContractState, staker: ContractAddress) {
+            self.ownable.assert_only_owner();
+            self.staker_address.write(staker);
         }
     }
 }

@@ -21,7 +21,7 @@ interface VaultPageProps {
   onNavigateHome?: () => void;
 }
 
-type TxType = 'deposit' | 'withdraw' | 'faucet';
+type TxType = 'deposit' | 'withdraw' | 'faucet' | 'stake' | 'unstake';
 
 interface VaultTx {
   id: string;
@@ -163,10 +163,11 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
 
   // ── Staked Vault APR (sy-WBTC emissions from reward_rate) ──
   const stakedAPR = useMemo(() => {
-    const rate = vault.stakerStats.rewardRate; // already fromWei'd (tokens per block)
-    const totalStaked = vault.stakerStats.totalStaked;
+    const rate = vault.stakerStats.rewardRate; // display sy-WBTC per block (18 dec)
+    const totalStaked = vault.stakerStats.totalStaked; // display LT staked (8 dec)
     if (rate <= 0 || totalStaked <= 0) return 12.5; // default APR when no stakers yet
-    // APR = (rewardRate * blocksPerYear / totalStaked) * 100
+    // APR = (sy-WBTC/block * blocks/year / LT_staked) * 100
+    // Valid because 1 sy-WBTC display ≈ 1 LT display in economic value
     const apr = (rate * BLOCKS_PER_YEAR / totalStaked) * 100;
     return Math.round(Math.min(apr, 999) * 100) / 100; // cap at 999%
   }, [vault.stakerStats.rewardRate, vault.stakerStats.totalStaked]);
@@ -278,38 +279,26 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
       if (numericStakedAmount > vault.wbtcBalance) { setShowStakedError(true); return; }
       setShowStakedError(false);
       info('Depositing & staking wBTC — approve in your wallet…');
-      
-      // DEMO MODE: Always show success, even if transaction fails
       const res = await vault.depositAndStake(numericStakedAmount);
-      
-      // Always treat as success for demo (the hook already simulates success on error)
-      if (res?.success || res?.error) {
-        // Even if there's an error, simulate success for demo
+      if (res?.success) {
+        addTx('stake', numericStakedAmount, res.txHash);
         success('wBTC deposited & staked!', res.txHash ? { href: `${NETWORK.EXPLORER_URL}/tx/${res.txHash}`, label: `View tx on Voyager (${res.txHash.slice(0, 10)}…)` } : undefined);
         setStakedAmount('');
       } else {
-        // Fallback: still show success for demo
-        success('wBTC deposited & staked!');
-        setStakedAmount('');
+        toastError(`Deposit & stake failed: ${res?.error ?? 'unknown error'}`);
       }
     } else {
       if (numericStakedAmount <= 0 || vault.stakerStats.userStaked === 0) return;
       if (numericStakedAmount > vault.stakerStats.userStaked) { setShowStakedError(true); return; }
       setShowStakedError(false);
       info('Unstaking & withdrawing wBTC — approve in your wallet…');
-      
-      // DEMO MODE: Always show success, even if transaction fails
       const res = await vault.unstakeAndWithdraw(numericStakedAmount);
-      
-      // Always treat as success for demo (the hook already simulates success on error)
-      if (res?.success || res?.error) {
-        // Even if there's an error, simulate success for demo
+      if (res?.success) {
+        addTx('unstake', numericStakedAmount, res.txHash);
         success('wBTC unstaked & withdrawn!', res.txHash ? { href: `${NETWORK.EXPLORER_URL}/tx/${res.txHash}`, label: `View tx on Voyager (${res.txHash.slice(0, 10)}…)` } : undefined);
         setStakedAmount('');
       } else {
-        // Fallback: still show success for demo
-        success('wBTC unstaked & withdrawn!');
-        setStakedAmount('');
+        toastError(`Unstake & withdraw failed: ${res?.error ?? 'unknown error'}`);
       }
     }
   };
@@ -561,63 +550,6 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                 </div>
               )}
 
-              {/* ── Harvest Fees (permissionless) ── */}
-              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-                <button
-                  className="vault-max-btn"
-                  type="button"
-                  style={{
-                    flex: 1,
-                    padding: '0.5rem',
-                    borderRadius: '8px',
-                    fontSize: '0.8rem',
-                    fontWeight: 600,
-                    color: '#a78bfa',
-                    background: 'rgba(167,139,250,0.08)',
-                    border: '1px solid rgba(167,139,250,0.25)',
-                    opacity: vault.isCollectingFees ? 0.6 : 1,
-                  }}
-                  disabled={vault.isCollectingFees}
-                  onClick={async () => {
-                    info('Collecting trading fees…');
-                    const res = await vault.collectFees();
-                    if (res?.success) {
-                      success('Fees collected from LEVAMM!', res.txHash ? { href: `${NETWORK.EXPLORER_URL}/tx/${res.txHash}`, label: `View tx` } : undefined);
-                    } else {
-                      toastError(`Collect fees failed: ${res?.error ?? 'unknown'}`);
-                    }
-                  }}
-                >
-                  {vault.isCollectingFees ? 'Collecting…' : 'Collect Fees'}
-                </button>
-                {vault.accumulatedHolderFees > 0 && (
-                  <button
-                    className="vault-max-btn"
-                    type="button"
-                    style={{
-                      flex: 1,
-                      padding: '0.5rem',
-                      borderRadius: '8px',
-                      fontSize: '0.8rem',
-                      fontWeight: 600,
-                      color: '#a78bfa',
-                      background: 'rgba(167,139,250,0.08)',
-                      border: '1px solid rgba(167,139,250,0.25)',
-                    }}
-                    onClick={async () => {
-                      info('Harvesting fees to LT holders…');
-                      const res = await vault.harvestFees();
-                      if (res?.success) {
-                        success('Fees distributed to LT token!', res.txHash ? { href: `${NETWORK.EXPLORER_URL}/tx/${res.txHash}`, label: `View tx` } : undefined);
-                      } else {
-                        toastError(`Harvest failed: ${res?.error ?? 'unknown'}`);
-                      }
-                    }}
-                  >
-                    Harvest (${vault.accumulatedHolderFees.toFixed(2)})
-                  </button>
-                )}
-              </div>
 
               <p className="vault-disclaimer">
                 Smart contracts are unaudited. Sepolia testnet only.{' '}
@@ -654,7 +586,7 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                 </button>
               </div>
 
-              {/* Rewards banner removed — no sy-WBTC rewards in v12 */}
+              {/* sy-WBTC rewards are active via Staker emissions */}
 
               {/* Input */}
               <div className="vault-input-card">
@@ -873,7 +805,7 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
               <div className="vault-transactions-header">
                 <span className="vault-transactions-title">Your transactions</span>
                 <div className="vault-transactions-filters">
-                  {(['all', 'deposit', 'withdraw', 'faucet'] as const).map((f) => (
+                  {(['all', 'deposit', 'withdraw', 'stake', 'unstake', 'faucet'] as const).map((f) => (
                     <button
                       key={f}
                       className={`vault-filter-btn${txFilter === f ? ' active' : ''}`}
@@ -894,16 +826,16 @@ export default function VaultPage({ onNavigateHome: _onNavigateHome }: VaultPage
                     .map((tx) => (
                       <div key={tx.id} className="vault-tx-row">
                         <div className="vault-tx-icon" data-type={tx.type}>
-                          {tx.type === 'deposit' ? '↓' : tx.type === 'withdraw' ? '↑' : '+'}
+                          {tx.type === 'deposit' ? '↓' : tx.type === 'withdraw' ? '↑' : tx.type === 'stake' ? '⇣' : tx.type === 'unstake' ? '⇡' : '+'}
                         </div>
                         <div className="vault-tx-info">
                           <span className="vault-tx-type">
-                            {tx.type === 'deposit' ? 'Deposit' : tx.type === 'withdraw' ? 'Withdraw' : 'Faucet'}
+                            {tx.type === 'deposit' ? 'Deposit' : tx.type === 'withdraw' ? 'Withdraw' : tx.type === 'stake' ? 'Deposit & Stake' : tx.type === 'unstake' ? 'Unstake & Withdraw' : 'Faucet'}
                           </span>
                           <span className="vault-tx-time">{timeAgo(tx.timestamp)}</span>
                         </div>
                         <div className="vault-tx-amount" data-type={tx.type}>
-                          {tx.type === 'withdraw' ? '-' : '+'}{tx.amount.toFixed(4)} wBTC
+                          {tx.type === 'withdraw' || tx.type === 'unstake' ? '-' : '+'}{tx.amount.toFixed(4)} wBTC
                         </div>
                         {tx.txHash && (
                           <a

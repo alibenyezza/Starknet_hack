@@ -173,7 +173,7 @@ export function Hero({ onNavigateDocs: _onNavigateDocs, onNavigateVault, isConne
               color: 'rgb(255, 255, 255)',
             }}
           >
-            $20B+
+            $2B+
           </div>
           <p
             style={{

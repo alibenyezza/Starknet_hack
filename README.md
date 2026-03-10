@@ -428,13 +428,11 @@ Starknet_hack/
 |   +-- index.html
 |
 +-- scripts/
-|   +-- deploy_all.sh                         # Master deployment (correct order + wiring)
-|   +-- deploy_v12.sh                         # v12 contracts deployment
-|   +-- deploy_v6.sh                          # v6 LEVAMM/Staker deployment
-|   +-- redeploy_v12.sh                       # v12 redeployment
-|   +-- redeploy_staker_and_swap.sh           # Current active script
+|   +-- redeploy_final.sh                     # Current deploy script (LT + Vault + Staker)
+|   +-- deploy_all.sh                         # Full deployment (all contracts + wiring)
 |   +-- fund_vpool.sh                         # Fund VirtualPool with USDC
-|   +-- [other utility scripts]
+|   +-- generate_swap_fees.sh                 # Generate LEVAMM swaps for APR
+|   +-- setup_account.sh                      # Starknet account setup helper
 |
 +-- README.md                                 # This file
 +-- CHANGEMENTS.md                            # Refactoring spec (FlowBasis -> StarkYield)
@@ -445,32 +443,38 @@ Starknet_hack/
 
 ## Deployed Contracts — Starknet Sepolia
 
-### v12 (current)
+> **Note:** After running `scripts/redeploy_final.sh`, update the 3 addresses marked with `*` below with the new deployment output.
+
+### Core Contracts
 
 | Contract | Address |
 |----------|---------|
-| VaultManager | `0x07af1ee2343f2710ac9b7544f0714adf1df292e7e98fece42b3a3e64fe27a3e9` |
-| LT Token | `0x018a65f5987d06a1e6d537a50ed7c8e4ea5869722f0f3772551e25f81efd4406` |
-| VirtualPool | `0x034bbd3d99c00f36773e712bbb8cba7022ee97746326cffda0af1c2efcb1a3c3` |
-| MockEkuboAdapter | `0x06c9c6ce0219d849675c1399a996908ced01aa8ec6660b09ab10bb2276908c48` |
-| MockLendingAdapter | `0x0014c719633c27561470a0b507c4b1458766c6fa4d2b70f979679339e9edb3c7` |
-| EkuboLPWrapper | `0x00d65a42e2aae825d3065a1693c5ede2e7ee31a1a7dfe8f44e9e1fb73e6f34bb` |
-| GaugeController | `0x06a2b1f4a3e58cb0ad7a71f94e7fbfabd975f94863f68401c97019a4c0d567d2` |
+| VaultManager* | `0x07eb052e36139c284835da8ac0591d7fb873a5e6779929575e373eb375ac38b8` |
+| LT Token* | `0x07bb2c643b849c46b845dec6488d9b3e0cffd3afe309b7e6f5c7ea45c6385a8f` |
+| LEVAMM | `0x007b1a0774303f1a9f5ead5ced7d67bf2ced3ecab52b9095501349b753b67a88` |
+| VirtualPool | `0x0190f9b1eeef43f98b96bc0d4c8dc0b9b2c008013975b1b1061d8564a1cc4753` |
+| FeeDistributor | `0x0360f009cf2e29fb8a30e133cc7c32783409d341286560114ccff9e3c7fc7362` |
+| RiskManager | `0x0481a49142bec3d6c68c77ec5ab1002c5f438aa55766c3efebbd741d35f25a25` |
+| MockEkuboAdapter | `0x013a15529211d5a2775bd698609b379ca1ff70ffa65b8d5f81485b9837c0ee12` |
+| MockLendingAdapter | `0x001b376346f9b24aca87c85c3a2780bea4941727fbc2a9e821b423d38cc4eb79` |
+| EkuboLPWrapper | `0x07574ae39df29c66e2fc640966070630eaf16281c32aaa8dce4687fdf4400034` |
 
-### Tokens (v12)
+### Staking & Governance
+
+| Contract | Address |
+|----------|---------|
+| Staker* | `0x01b92e5719bcf3c419113bbccb0e8ead3a93a8b5d38804edbcf26fcb7e06d719` |
+| SyToken (sy-WBTC) | `0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e` |
+| GaugeController | `0x05d3800e8b1ee257b5f72ce0f4c373c5d8e5b9d84f1bff1917b073ce2fbe46e7` |
+| VotingEscrow | `0x0008617d29fed039d3448bdd002912183c45b6d4c268dbd33cf02055368eef3c` |
+| LiquidityGauge | `0x0571bfcd77fee368783ff746f6ec0bf56706fc1989caa9c521295dfd97f72b13` |
+
+### Tokens
 
 | Token | Address | Decimals |
 |-------|---------|----------|
 | MockWBTC | `0x01299997532891f6cb0088b5c779138f98f29d5a03e23e9611fad7071dffd89b` | 8 |
 | MockUSDC | `0x02ada118d8ec35abdf936f2d2f93cbe0d4fc66bd16bb51ef3b4f2baf20d32306` | 6 |
-
-### v6 (LEVAMM + Staker + Governance)
-
-| Contract | Address |
-|----------|---------|
-| LevAMM | `0x0623647a3e0f7f7a7aa0061a692c4e64e916dd853e0d71624da95f4076fff4af` |
-| Staker | `0x04620f57ef40e7e2293ca6d06153930697bcb88d173f1634ba5cff768acec273` |
-| SyToken (sy-WBTC) | `0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e` |
 
 ---
 
@@ -504,24 +508,18 @@ scarb build         # Compile Cairo contracts
 snforge test        # Run all tests (~3500 lines across 11 suites)
 ```
 
-### Deploy
+### Deploy (redeploy LT + VaultManager + Staker)
 
 ```bash
-# 1. Build and declare
-cd contracts && scarb build
-sncast --account sepolia declare --contract-name VaultManager
-# ... declare all contracts
+# 1. Build contracts
+cd contracts && scarb build && cd ..
 
-# 2. Deploy + wire everything
-sed -i 's/\r$//' scripts/deploy_all.sh
-# Update CLASS HASHES in the script
-bash scripts/deploy_all.sh
+# 2. Run the redeploy script (declares, deploys, wires 14 steps)
+sed -i 's/\r$//' scripts/redeploy_final.sh
+bash scripts/redeploy_final.sh
 
-# 3. Fund VirtualPool
-sncast --account sepolia invoke --contract-address $VPOOL --function fund --arguments "1000000000000"
-
-# 4. Update frontend addresses
-# Copy output addresses into frontend/src/config/constants.ts
+# 3. Copy the 3 new addresses into frontend
+# The script prints the exact values to paste into frontend/src/config/constants.ts
 ```
 
 ---

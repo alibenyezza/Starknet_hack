@@ -43,7 +43,7 @@ pub mod Staker {
         stake_token: ContractAddress,
         sy_token: ContractAddress,
         total_staked: u256,
-        reward_rate: u256,            // sy-WBTC minted per block per SCALE unit of staked syBTC
+        reward_rate: u256,            // raw sy-WBTC tokens emitted per block (NOT 1e18-scaled)
         last_reward_block: u64,
         acc_reward_per_share: u256,   // accumulated sy-WBTC per share (1e18-scaled)
         staked_balances: Map<ContractAddress, u256>,
@@ -169,7 +169,7 @@ pub mod Staker {
                 let last_block = self.last_reward_block.read();
                 if current_block > last_block {
                     let blocks: u256 = (current_block - last_block).into();
-                    let new_rewards = Math::mul_fixed(self.reward_rate.read(), blocks);
+                    let new_rewards = self.reward_rate.read() * blocks;
                     acc = acc + (new_rewards * Constants::SCALE) / total;
                 }
             }
@@ -202,6 +202,8 @@ pub mod Staker {
 
         fn set_sy_token(ref self: ContractState, sy: ContractAddress) {
             assert(get_caller_address() == self.owner.read(), 'Only owner');
+            let zero: ContractAddress = 0_felt252.try_into().unwrap();
+            assert(sy != zero, 'Cannot set zero address');
             self.sy_token.write(sy);
         }
 
@@ -209,6 +211,8 @@ pub mod Staker {
 
         fn set_owner(ref self: ContractState, new_owner: ContractAddress) {
             assert(get_caller_address() == self.owner.read(), 'Only owner');
+            let zero: ContractAddress = 0_felt252.try_into().unwrap();
+            assert(new_owner != zero, 'Cannot set zero address');
             self.owner.write(new_owner);
         }
     }
@@ -225,8 +229,8 @@ pub mod Staker {
                 return;
             }
             let blocks: u256 = (current_block - last_block).into();
-            // new_rewards = rate * blocks (rate is 1e18-scaled per-block unit)
-            let new_rewards = Math::mul_fixed(self.reward_rate.read(), blocks);
+            // new_rewards = rate * blocks (rate is raw tokens per block)
+            let new_rewards = self.reward_rate.read() * blocks;
             // acc += new_rewards * SCALE / total_staked
             let addition = (new_rewards * Constants::SCALE) / total;
             self.acc_reward_per_share.write(self.acc_reward_per_share.read() + addition);

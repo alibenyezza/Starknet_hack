@@ -450,7 +450,7 @@ mod tests {
         let tolerance = SCALE; // 1 unit rounding
         assert(holder + vesy >= dist_amount - tolerance, 'Sum too low');
         assert(holder + vesy <= dist_amount + tolerance, 'Sum too high');
-        assert(holder > vesy, 'Holders should get more than veSY');
+        assert(holder > vesy, 'Holders should get more veSY');
     }
 
     // ═══════════════════════════════════════════════════════════════════════
@@ -565,7 +565,7 @@ mod tests {
         // Small withdrawal within limit
         assert(
             sys.risk_manager.check_withdrawal_limit(50 * SCALE),
-            'Should allow 50 within 100 limit',
+            'Allow 50 within 100 limit',
         );
     }
 

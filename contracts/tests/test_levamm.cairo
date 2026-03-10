@@ -286,7 +286,7 @@ mod tests {
 
         // Not initialized → collateral = 0 → DTV = 0
         let dtv = amm.get_dtv();
-        assert(dtv == 0, 'DTV should be 0 with no collateral');
+        assert(dtv == 0, 'DTV should be 0 no collateral');
     }
 
     // ═══════════════════════════════════════════════════════════════════════

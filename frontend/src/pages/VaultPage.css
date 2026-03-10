@@ -623,6 +623,16 @@
   color: #ef4444;
 }
 
+.vault-tx-icon[data-type="stake"] {
+  background: rgba(74, 222, 128, 0.1);
+  color: #4ade80;
+}
+
+.vault-tx-icon[data-type="unstake"] {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+
 .vault-tx-icon[data-type="faucet"] {
   background: rgba(167, 139, 250, 0.1);
   color: #a78bfa;
@@ -660,6 +670,14 @@
 
 .vault-tx-amount[data-type="faucet"] {
   color: #a78bfa;
+}
+
+.vault-tx-amount[data-type="stake"] {
+  color: #4ade80;
+}
+
+.vault-tx-amount[data-type="unstake"] {
+  color: #ef4444;
 }
 
 .vault-tx-amount[data-type="withdraw"] {

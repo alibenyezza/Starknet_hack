@@ -79,7 +79,7 @@ mod tests {
         // 100% staked → f_a = 1 - (1 - 0.1) * sqrt(1 - 1) = 1 - 0 = 1 (100%)
         let fee = fd.compute_admin_fee(100 * SCALE, 100 * SCALE);
 
-        assert(fee == SCALE, 'Fee should be 100% when all staked');
+        assert(fee == SCALE, 'Fee 100% when all staked');
     }
 
     #[test]
@@ -90,7 +90,7 @@ mod tests {
         // total_lt = 0 → returns MIN_ADMIN_FEE
         let fee = fd.compute_admin_fee(0, 0);
         let min_admin = SCALE / 10;
-        assert(fee == min_admin, 'Should return min fee for 0 total');
+        assert(fee == min_admin, 'Should return min fee 0 total');
     }
 
     #[test]

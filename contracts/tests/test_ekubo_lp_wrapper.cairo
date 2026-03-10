@@ -147,7 +147,7 @@ mod tests {
         let wrapper = deploy_wrapper_zero(owner);
 
         let erc20 = IERC20Dispatcher { contract_address: wrapper.contract_address };
-        assert(erc20.total_supply() == 0, 'Initial total supply should be 0');
+        assert(erc20.total_supply() == 0, 'Init total supply should be 0');
     }
 
     #[test]
@@ -640,7 +640,7 @@ mod tests {
         stop_cheat_caller_address(wrapper.contract_address);
 
         // shares = 1001 - 1000 = 1
-        assert(shares == 1, 'Min deposit should yield 1 share');
+        assert(shares == 1, 'Min deposit should yield 1 sh');
     }
 
     // ═══════════════════════════════════════════════════════

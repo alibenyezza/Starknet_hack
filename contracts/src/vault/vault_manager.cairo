@@ -184,7 +184,7 @@ pub mod VaultManager {
     impl VaultManagerImpl of IVaultManager<ContractState> {
         /// Deposit BTC — correct StarkYield CDP flow.
         ///
-        /// Order: flash_loan → add_liquidity → deposit_collateral_lp → borrow_usdc → repay_flash_loan
+        /// Order: consolidate_old_LP → flash_loan → add_combined_LP → deposit_collateral_lp → borrow_usdc → repay_flash_loan
         fn deposit(ref self: ContractState, amount: u256) -> u256 {
             assert(!self.paused.read(), 'Vault is paused');
             self._check_price_staleness();
@@ -213,29 +213,40 @@ pub mod VaultManager {
             let ok = btc.transfer_from(caller, this, amount);
             assert(ok, 'BTC transfer_from failed');
 
-            // 2. USDC needed: convert BTC-raw (8 dec) to USDC-raw (6 dec)
+            // 2. Consolidate with existing LP (prevents LP orphaning on multiple deposits)
+            let old_lp_felt = lending.withdraw_collateral_lp();
+            let (old_btc, old_usdc) = if old_lp_felt != 0 {
+                let old_lp_id: u64 = old_lp_felt.try_into().unwrap_or(1_u64);
+                ekubo.remove_liquidity(old_lp_id)
+            } else {
+                (0_u256, 0_u256)
+            };
+
+            // 3. USDC needed for new deposit: convert BTC-raw (8 dec) to USDC-raw (6 dec)
             //    amount_raw * price / 10^BTC_DEC * 10^USDC_DEC = amount * price / 100
             let usdc_needed = amount * ekubo.get_btc_price() / 100;
 
-            // 3. Flash loan: VirtualPool transfers usdc_needed from reserves to vault
+            // 4. Flash loan: VirtualPool transfers usdc_needed from reserves to vault
             vpool.flash_loan(usdc_needed);
 
-            // 4. Add LP: vault provides BTC + USDC → receives LP token
-            btc.approve(ekubo_addr, amount);
-            usdc.approve(ekubo_addr, usdc_needed);
-            let lp_id = ekubo.add_liquidity(amount, usdc_needed);
+            // 5. Add LP: combine old position + new deposit
+            let combined_btc = old_btc + amount;
+            let combined_usdc = old_usdc + usdc_needed;
+            btc.approve(ekubo_addr, combined_btc);
+            usdc.approve(ekubo_addr, combined_usdc);
+            let lp_id = ekubo.add_liquidity(combined_btc, combined_usdc);
 
-            // 5. Post LP as CDP collateral — BEFORE borrowing (correct CDP semantics)
+            // 6. Post LP as CDP collateral — BEFORE borrowing (correct CDP semantics)
             lending.deposit_collateral_lp(lp_id.into());
 
-            // 6. Borrow USDC against LP collateral (mock: mints USDC to vault)
+            // 7. Borrow USDC against LP collateral (mock: mints USDC to vault)
             lending.borrow_usdc(usdc_needed);
 
-            // 7. Repay flash loan with borrowed USDC
+            // 8. Repay flash loan with borrowed USDC
             usdc.approve(vpool_addr, usdc_needed);
             vpool.repay_flash_loan(usdc_needed);
 
-            // 8. Mint LT shares 1:1 with deposited BTC + update accounting
+            // 9. Mint LT shares 1:1 with deposited BTC + update accounting
             let shares = amount;
             lt.mint(caller, shares);
             let cur = self.user_shares.read(caller);

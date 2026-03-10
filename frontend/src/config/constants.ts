@@ -56,6 +56,7 @@ export const DECIMALS = {
   BTC: 8,
   USDC: 6,
   SHARES: 18,
+  SY_WBTC: 18,
 } as const;
 
 // Format Options
