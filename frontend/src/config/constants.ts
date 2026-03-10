@@ -2,8 +2,8 @@
 // Full redeploy with fees, LEVAMM APR, rebalancing
 export const CONTRACTS = {
   // ── Core vault contracts ─────────────────────────────────────
-  VAULT_MANAGER:        '0x07eb052e36139c284835da8ac0591d7fb873a5e6779929575e373eb375ac38b8',
-  LT_TOKEN:             '0x07bb2c643b849c46b845dec6488d9b3e0cffd3afe309b7e6f5c7ea45c6385a8f',
+  VAULT_MANAGER:        '0x0242576ef6892cb18e5f2a473d1c5d2621a6391f8791fab11fb8f160cf01f6b9',
+  LT_TOKEN:             '0x01b1f8fa22e45ae245d4329c35771f3087fa4b57cf881e6ba35ccc6d4c3c7447',
   VIRTUAL_POOL:         '0x0190f9b1eeef43f98b96bc0d4c8dc0b9b2c008013975b1b1061d8564a1cc4753',
   MOCK_EKUBO_ADAPTER:   '0x013a15529211d5a2775bd698609b379ca1ff70ffa65b8d5f81485b9837c0ee12',
   MOCK_LENDING_ADAPTER: '0x001b376346f9b24aca87c85c3a2780bea4941727fbc2a9e821b423d38cc4eb79',
@@ -22,8 +22,8 @@ export const CONTRACTS = {
 
   // ── LEVAMM + Staker ─────────────────────────────────────────
   LEVAMM:        '0x007b1a0774303f1a9f5ead5ced7d67bf2ced3ecab52b9095501349b753b67a88',
-  STAKER:        '0x01b92e5719bcf3c419113bbccb0e8ead3a93a8b5d38804edbcf26fcb7e06d719',
-  SY_TOKEN:      '0x0761c9f9d225c4b4e8e3f49ee5935af94a647e40f4c378a65c5553dfcd2efd4e',
+  STAKER:        '0x0766933ae46b9096e7bedc38bb669daf9532886bbd1ee19dd29219f80806cc92',
+  SY_TOKEN:      '0x063fabdc8bdfa688e503ea1d53ad24a5d4a09e3c9c6d63ed43daa48b71cf7eee',
   SY_BTC_TOKEN:  '0x076cb4dadb2db9a95072ecffbb67a61076e642eced3d7f37361ff6f202018be3',
 } as const;
 
